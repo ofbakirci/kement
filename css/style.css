@@ -134,24 +134,58 @@ button.ghost:hover { color: var(--err); background: transparent; }
 .filelist {
   list-style: none;
   margin-top: 8px;
-  max-height: 130px;
+  max-height: 170px;
   overflow-y: auto;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 4px 8px;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
+.filelist:empty { display: none; }
 .filelist li {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 10px;
-  padding: 3px 2px;
-  border-bottom: 1px solid #2e2e2e;
+  padding: 4px 0;
+  border-bottom: 1px solid #2a2a2a;
   color: var(--text);
 }
+.filelist li:last-child { border-bottom: none; }
 .filelist li .fpath {
   color: var(--dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.45;
 }
 .filelist li .fsize { color: var(--dim); flex-shrink: 0; }
+.filelist li.offline .fpath { color: var(--warn); }
+.filelist li.offline .fsize { color: var(--err); font-weight: 600; }
+
+.ctxmenu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  background: #2e2e2f;
+  border: 1px solid #4a4a4a;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.ctxmenu.hidden { display: none; }
+.ctxmenu button {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 5px;
+}
+.ctxmenu button:hover { background: var(--accent-dim); color: #fff; }
 
 .progresscard.hidden { display: none; }
 .plabel { margin-bottom: 6px; font-weight: 600; }

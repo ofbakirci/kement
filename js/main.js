@@ -11,6 +11,7 @@ const req = (typeof require === 'function') ? require
 const fs = req('fs');
 const path = req('path');
 const crypto = req('crypto');
+const cp = req('child_process');
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -419,18 +420,21 @@ async function doScanProject() {
 
     const list = $('collectList');
     list.innerHTML = '';
-    for (const f of outside) {
+    const addRow = (p, sizeLabel, offlineRow) => {
       const li = document.createElement('li');
+      if (offlineRow) li.classList.add('offline');
       const sp = document.createElement('span');
       sp.className = 'fpath';
-      sp.textContent = f.path;
-      sp.title = f.path;
+      sp.textContent = p;
       const sz = document.createElement('span');
       sz.className = 'fsize';
-      sz.textContent = fmtBytes(f.size);
+      sz.textContent = sizeLabel;
       li.append(sp, sz);
+      li.addEventListener('contextmenu', (ev) => openCtxMenu(ev, p, offlineRow));
       list.appendChild(li);
-    }
+    };
+    for (const f of outside) addRow(f.path, fmtBytes(f.size), false);
+    for (const f of offline) addRow(f.path, 'offline', true);
 
     const totalBytes = outside.reduce((a, f) => a + f.size, 0);
     const parts = [];
@@ -621,6 +625,60 @@ async function doApplySync() {
   }
 }
 
+/* ── Sağ tık menüsü ──────────────────────────────────────────── */
+
+let ctxPath = null;
+let ctxOffline = false;
+
+function copyToClipboard(text) {
+  const p = cp.spawn('pbcopy');
+  p.stdin.end(text);
+}
+
+function openCtxMenu(ev, p, offlineRow) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  ctxPath = p;
+  ctxOffline = offlineRow;
+  const m = $('ctxMenu');
+  m.classList.remove('hidden');
+  m.style.left = Math.max(4, Math.min(ev.pageX, document.documentElement.clientWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(4, Math.min(ev.pageY, document.documentElement.clientHeight - m.offsetHeight - 8)) + 'px';
+}
+
+function closeCtxMenu() {
+  $('ctxMenu').classList.add('hidden');
+}
+
+async function ctxAction(act) {
+  const p = ctxPath;
+  if (!p) return;
+  if (act === 'copy') {
+    copyToClipboard(p);
+    log('Yol panoya kopyalandı.');
+  } else if (act === 'finder') {
+    if (fs.existsSync(p)) {
+      cp.execFile('open', ['-R', p]);
+    } else {
+      const dir = path.dirname(p);
+      if (fs.existsSync(dir)) {
+        cp.execFile('open', [dir]);
+        log('Dosya diskte yok; bulunduğu klasör açıldı.', 'warn');
+      } else {
+        log('Dosya da klasörü de diskte yok: ' + p, 'err');
+      }
+    }
+  } else if (act === 'project') {
+    const r = await callJSX('revealInProject', p);
+    if (r.ok) {
+      log(r.how === 'source' ? 'Source Monitor\'de açıldı: ' + path.basename(p)
+                             : 'Proje panelinde seçildi: ' + path.basename(p), 'ok');
+    } else {
+      log('Projede gösterilemedi: ' + (r.err || 'bilinmeyen hata'), 'err');
+    }
+  }
+}
+
 /* ── Kablolama ───────────────────────────────────────────────── */
 
 function init() {
@@ -642,6 +700,18 @@ function init() {
   document.querySelectorAll('button.clear').forEach((btn) => {
     btn.onclick = () => { $('p' + btn.dataset.i).value = ''; saveSettings(); invalidateSync(); };
   });
+
+  $('ctxMenu').addEventListener('click', (ev) => {
+    const act = ev.target && ev.target.dataset ? ev.target.dataset.act : null;
+    closeCtxMenu();
+    if (act) ctxAction(act);
+  });
+  document.addEventListener('click', closeCtxMenu);
+  document.addEventListener('contextmenu', (ev) => {
+    // liste satırları kendi menüsünü açıyor; başka yere sağ tıklanınca kapat
+    if (!ev.target.closest || !ev.target.closest('.filelist li')) closeCtxMenu();
+  });
+  window.addEventListener('blur', closeCtxMenu);
 
   $('scanProject').onclick = doScanProject;
   $('applyCollect').onclick = doApplyCollect;

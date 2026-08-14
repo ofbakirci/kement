@@ -93,6 +93,35 @@ var ESL = (function () {
       }
     },
 
+    // mediaPath'e bağlı ilk öğeyi Proje panelinde seçer;
+    // seçme desteklenmiyorsa Source Monitor'de açar.
+    revealInProject: function (mediaPath) {
+      try {
+        if (!app.project) return '{"ok":false,"err":"Açık proje yok"}';
+        var items = [];
+        collectItems(app.project.rootItem, items);
+        var found = null;
+        for (var i = 0; i < items.length; i++) {
+          var p = "";
+          try { p = items[i].getMediaPath(); } catch (e) {}
+          if (p === mediaPath) { found = items[i]; break; }
+        }
+        if (!found) return '{"ok":false,"err":"Bu yola bağlı proje öğesi bulunamadı"}';
+        try {
+          found.select();
+          return '{"ok":true,"how":"select"}';
+        } catch (e) {}
+        try {
+          app.sourceMonitor.openProjectItem(found);
+          return '{"ok":true,"how":"source"}';
+        } catch (e2) {
+          return '{"ok":false,"err":' + esc(e2.toString()) + '}';
+        }
+      } catch (e) {
+        return '{"ok":false,"err":' + esc(e.toString()) + '}';
+      }
+    },
+
     // Açık projenin .prproj yolu (varsayılan hedef klasör önerisi için).
     getProjectPath: function () {
       try {
