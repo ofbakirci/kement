@@ -34,9 +34,7 @@ header .logo {
   height: 26px;
   align-self: center;
   flex-shrink: 0;
-  background-color: var(--accent);
-  -webkit-mask: url('../assets/kement.svg') no-repeat center / contain;
-  mask: url('../assets/kement.svg') no-repeat center / contain;
+  color: var(--accent);
 }
 header h1 {
   font-size: 17px;

@@ -34,11 +34,20 @@ Kurallar:
 
 ## Kurulum
 
+**Kolay yol:** [Releases](https://github.com/ofbakirci/kement/releases/latest)'ten
+`Kement_x.y.z.zxp` indir, [aescripts ZXP Installer](https://aescripts.com/learn/zxp-installer/)
+penceresine sürükle-bırak.
+
+**Geliştirici yolu:**
+
 ```bash
 ./install.sh
 ```
 
-Sonra Premiere Pro'yu yeniden başlat → **Window > Extensions > Kement**.
+Her iki yolda da sonra Premiere Pro'yu yeniden başlat → **Window > Extensions > Kement**.
+
+Dağıtım paketi üretmek için: `./package.sh` → `dist/Kement_<sürüm>.zxp`
+(ilk çalıştırmada ZXPSignCmd'yi indirir, self-signed sertifika üretir; `dist/` git dışıdır).
 
 Script, paneli `~/Library/Application Support/Adobe/CEP/extensions/` altına
 symlink'ler ve imzasız panel çalışabilsin diye Adobe CEP `PlayerDebugMode`
