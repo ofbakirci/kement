@@ -1,0 +1,187 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #1e1e1e;
+  --card: #262627;
+  --card-edge: #333;
+  --text: #d9d9d9;
+  --dim: #8a8a8a;
+  --accent: #5b9df0;
+  --accent-dim: #3a6cb0;
+  --ok: #6fbf73;
+  --warn: #e0a458;
+  --err: #e06c65;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { padding: 14px; }
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+header .logo {
+  width: 26px;
+  height: 26px;
+  align-self: center;
+  flex-shrink: 0;
+  background-color: var(--accent);
+  -webkit-mask: url('../assets/kement.svg') no-repeat center / contain;
+  mask: url('../assets/kement.svg') no-repeat center / contain;
+}
+header h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+}
+header .sub { color: var(--dim); font-size: 11px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.card h2 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+.hint { color: var(--dim); line-height: 1.45; margin-bottom: 10px; }
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.row input {
+  flex: 1;
+  min-width: 0;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+.row input::placeholder { color: #5a5a5a; }
+
+.tag {
+  flex: 0 0 46px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid #3a3a3a;
+  border-radius: 5px;
+  padding: 3px 0;
+}
+.tag.src { color: var(--accent); border-color: var(--accent-dim); }
+
+button {
+  background: #333;
+  border: 1px solid #454545;
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button:hover:not(:disabled) { background: #3d3d3d; }
+button:disabled { opacity: 0.4; cursor: default; }
+
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #fff;
+}
+button.primary:hover:not(:disabled) { background: var(--accent); }
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--dim);
+  padding: 6px 6px;
+}
+button.ghost:hover { color: var(--err); background: transparent; }
+
+.btnrow { display: flex; gap: 8px; margin-top: 10px; }
+.btnrow button { flex: 1; }
+
+.summary { margin-top: 10px; line-height: 1.5; }
+.summary .mirrorline { margin-bottom: 4px; }
+.summary .ok   { color: var(--ok); }
+.summary .warn { color: var(--warn); }
+.summary .err  { color: var(--err); }
+.summary .muted { color: var(--dim); }
+
+.filelist {
+  list-style: none;
+  margin-top: 8px;
+  max-height: 130px;
+  overflow-y: auto;
+}
+.filelist li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 2px;
+  border-bottom: 1px solid #2e2e2e;
+  color: var(--text);
+}
+.filelist li .fpath {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filelist li .fsize { color: var(--dim); flex-shrink: 0; }
+
+.progresscard.hidden { display: none; }
+.plabel { margin-bottom: 6px; font-weight: 600; }
+.bar {
+  height: 6px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+#barFill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.15s ease;
+}
+.pdetail { margin-top: 6px; color: var(--dim); }
+
+.log {
+  max-height: 150px;
+  overflow-y: auto;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+.logline { color: var(--dim); }
+.logline.ok   { color: var(--ok); }
+.logline.warn { color: var(--warn); }
+.logline.err  { color: var(--err); }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }

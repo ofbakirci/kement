@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Kement</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <span class="logo" aria-hidden="true"></span>
+  <h1>kement</h1>
+  <span class="sub">topla · bağla · eşitle</span>
+</header>
+
+<!-- ── Topla & Bağla ─────────────────────────────── -->
+<section class="card">
+  <h2>Topla &amp; Bağla</h2>
+  <p class="hint">Projede kullanılan ama medya klasörünün dışında kalan dosyaları
+     (Downloads vb.) klasöre kopyalar ve projeyi otomatik yeni yola bağlar.</p>
+
+  <div class="row">
+    <input id="targetPath" type="text" placeholder="Medya klasörü seç…" readonly>
+    <button id="pickTarget">Seç</button>
+  </div>
+
+  <div class="btnrow">
+    <button id="scanProject" class="primary">Projeyi Tara</button>
+    <button id="applyCollect" class="primary" disabled>Topla ve Bağla</button>
+  </div>
+
+  <div id="collectSummary" class="summary"></div>
+  <ul id="collectList" class="filelist"></ul>
+</section>
+
+<!-- ── Eşitle ────────────────────────────────────── -->
+<section class="card">
+  <h2>Eşitle</h2>
+  <p class="hint">Kaynaktaki yeni/değişen dosyaları aynalara kopyalar. Üzerine yazmadan
+     önce eskisini yedekler, sadece adı değişen dosyayı kopyalamak yerine yeniden adlandırır.</p>
+
+  <div class="row path">
+    <span class="tag src">Kaynak</span>
+    <input id="p0" type="text" placeholder="Ana disk / klasör…" readonly>
+    <button class="pick" data-i="0">Seç</button>
+  </div>
+  <div class="row path">
+    <span class="tag">Ayna&nbsp;1</span>
+    <input id="p1" type="text" placeholder="Yedek disk / klasör…" readonly>
+    <button class="pick" data-i="1">Seç</button>
+  </div>
+  <div class="row path">
+    <span class="tag">Ayna&nbsp;2</span>
+    <input id="p2" type="text" placeholder="(isteğe bağlı)" readonly>
+    <button class="pick" data-i="2">Seç</button>
+    <button class="clear ghost" data-i="2" title="Temizle">×</button>
+  </div>
+
+  <div class="btnrow">
+    <button id="scanSync" class="primary">Tara</button>
+    <button id="applySync" class="primary" disabled>Eşitle</button>
+  </div>
+
+  <div id="syncSummary" class="summary"></div>
+</section>
+
+<!-- ── İlerleme ──────────────────────────────────── -->
+<section class="card progresscard hidden" id="progressCard">
+  <div id="progressLabel" class="plabel"></div>
+  <div class="bar"><div id="barFill"></div></div>
+  <div id="progressDetail" class="pdetail"></div>
+</section>
+
+<!-- ── Günlük ────────────────────────────────────── -->
+<section class="card">
+  <h2>Günlük</h2>
+  <div id="log" class="log"></div>
+</section>
+
+<script src="js/main.js"></script>
+</body>
+</html>
