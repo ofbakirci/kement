@@ -52,7 +52,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 rsync -a "$ROOT/" "$STAGE/" \
   --exclude ".claude" --exclude ".debug" --exclude ".git" --exclude ".gitignore" \
-  --exclude "dist" --exclude "docs" --exclude "*.log" \
+  --exclude "dist" --exclude "docs" --exclude "tests" --exclude "*.log" \
   --exclude "install.sh" --exclude "package.sh" --exclude ".DS_Store"
 
 # symlink guvenlik kontrolu: ZXP icinde symlink kalirsa kurulum bozuk/bos panel

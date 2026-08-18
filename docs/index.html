@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kement — Premiere Pro için topla · bağla · eşitle</title>
-<meta name="description" content="Premiere Pro paneli: başıboş footage'a kement atar, projeyi yeniden bağlar, diskleri güvenle eşitler. Yedeksiz üzerine yazmaz, silmez, rename'i algılar.">
+<meta name="description" content="Premiere Pro paneli: başıboş footage'a kement atar, projeyi yeniden bağlar, diskleri güvenle eşitler. Yedeksiz üzerine yazmaz ve aynaya özgü dosyalara dokunmaz.">
 <link rel="icon" href="kement.svg" type="image/svg+xml">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -273,9 +273,9 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
     </div>
     <div class="card">
       <h2>Eşitle</h2>
-      <p>Kaynak diski bir veya iki aynaya <b>tek yönlü, incremental</b> eşitler.
-      Önce tarar ve planı gösterir — kaç yeni dosya, kaç güncelleme, kaç yeniden
-      adlandırma — sen onaylayınca uygular, süreci progress bar'da izlersin.</p>
+      <p>Kaynak diski bir veya iki aynaya <b>incremental</b> eşitler. Önce A → B
+      planını gösterir. Yalnızca aynada kalan dosyaları klasör ağacında açar;
+      seçtiklerini kaynağa alır, diğerlerine dokunmaz.</p>
     </div>
   </section>
 
@@ -284,12 +284,12 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
     <ul>
       <li><b>Yedeksiz üzerine yazmaz.</b> Güncellenen her dosyanın eski hali aynadaki
         <code>_kement_yedek</code> klasörüne taşınır.</li>
-      <li><b>Hiçbir şeyi silmez.</b> Kaynakta artık olmayan dosyalar çöpe değil,
-        tarihli yedek klasörüne gider.</li>
-      <li><b>Rename'i algılar.</b> Sadece adı değişen 50 GB'lık dosyayı yeniden kopyalamaz;
-        içerik parmak iziyle eşleştirir, aynada saniyesinde yeniden adlandırır.</li>
-      <li><b>Yarım kopya bırakmaz.</b> Dosyalar önce geçici ada yazılır, kopya bitince
-        gerçek adını alır. Elektrik gitse bile aynada bozuk dosya kalmaz.</li>
+      <li><b>Aynaya özgü dosyaya dokunmaz.</b> B'de olup A'da olmayanları klasör
+        ağacında gösterir. Seçtiğini A'ya kopyalar; gerisini B'de bırakır.</li>
+      <li><b>Sonucu doğrular.</b> A → B işleminden sonra dosyaları tam SHA-256
+        içerik özetiyle yeniden karşılaştırır.</li>
+      <li><b>Geçici kopyayı doğrular.</b> Dosyayı önce benzersiz geçici ada yazar.
+        Hedef bu sırada oluşur veya değişirse üzerine yazmaz.</li>
       <li class="w"><b>Ters yöne karşı uyarır.</b> Aynadaki dosya kaynaktakinden daha
         yeniyse eşitlemeden önce haber verir.</li>
     </ul>
@@ -299,7 +299,7 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
     <h2>Kurulum</h2>
     <p>macOS + Premiere Pro 2019 ve üzeri.</p>
     <p><b style="color:#fff">Kolay yol:</b>
-    <a href="https://github.com/ofbakirci/kement/releases/latest" style="color:var(--accent)">Kement_0.1.0.zxp</a>'yi
+    <a href="https://github.com/ofbakirci/kement/releases/latest" style="color:var(--accent)">Kement_0.2.0.zxp</a>'yi
     indir, <a href="https://aescripts.com/learn/zxp-installer/" style="color:var(--accent)">aescripts ZXP Installer</a>
     penceresine sürükle-bırak. Bu kadar.</p>
     <p><b style="color:#fff">Geliştirici yolu:</b></p>

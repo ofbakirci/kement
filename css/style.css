@@ -129,6 +129,148 @@ button.ghost:hover { color: var(--err); background: transparent; }
 .summary .err  { color: var(--err); }
 .summary .muted { color: var(--dim); }
 
+.mirror-review {
+  margin-top: 10px;
+  overflow: hidden;
+  background: #1a1a1a;
+  border: 1px solid #624d2f;
+  border-radius: 8px;
+}
+.mirror-review.hidden,
+.review-conflict.hidden,
+.decision-summary.hidden,
+#mirrorOnlyEditor.hidden { display: none; }
+.review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(224, 164, 88, 0.08);
+  border-bottom: 1px solid #3c3429;
+}
+.review-title { color: var(--warn); font-weight: 600; }
+.review-stats { margin-top: 2px; color: var(--dim); font-size: 10.5px; }
+.review-question { padding: 10px 10px 2px; color: var(--text); font-weight: 600; }
+.review-note { padding: 0 10px 9px; color: var(--dim); font-size: 10.5px; line-height: 1.45; }
+
+.tree-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.tree-tools input[type="search"] {
+  flex: 1;
+  min-width: 80px;
+  background: #232323;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.tree-tools input[type="search"]::placeholder { color: #666; }
+.check-action {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  color: var(--dim);
+  cursor: pointer;
+}
+input[type="checkbox"] { accent-color: var(--accent); }
+button.compact { padding: 4px 7px; }
+
+.mirror-trees {
+  max-height: 280px;
+  overflow: auto;
+  overflow-x: hidden;
+  border-top: 1px solid #2d2d2d;
+  border-bottom: 1px solid #2d2d2d;
+}
+.mirror-tree + .mirror-tree { border-top: 1px solid #414141; }
+.mirror-tree.filtered-out { display: none; }
+.mirror-tree-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 9px;
+  background: #242424;
+  border-bottom: 1px solid #303030;
+}
+.mirror-tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.mirror-tree-meta { margin-left: auto; color: var(--dim); font-size: 10px; white-space: nowrap; }
+.tree-branch.filtered-out,
+.tree-file.filtered-out { display: none; }
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-bottom: 1px solid #252525;
+}
+.tree-row:hover { background: #222a33; }
+.tree-row:focus-within { box-shadow: inset 2px 0 var(--accent); }
+.tree-toggle {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dim);
+  line-height: 24px;
+}
+.tree-toggle:hover:not(:disabled) { background: #343434; color: #fff; }
+.tree-toggle:disabled { opacity: 0; }
+.tree-check { flex: 0 0 auto; }
+.tree-icon { width: 14px; flex: 0 0 14px; color: var(--warn); text-align: center; }
+.tree-file .tree-icon { color: var(--dim); }
+.tree-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+.tree-meta { color: var(--dim); font-size: 10px; white-space: nowrap; }
+.tree-children.collapsed { display: none; }
+
+.review-conflict {
+  margin: 8px 10px 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(224, 108, 101, 0.55);
+  border-radius: 6px;
+  color: var(--err);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.review-actions,
+.decision-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+}
+.review-actions { flex-wrap: wrap; }
+.selected-count { flex: 1; min-width: 86px; color: var(--dim); }
+.decision-summary { color: var(--ok); }
+.decision-summary span { flex: 1; line-height: 1.4; }
+
+@media (max-width: 360px) {
+  .tree-tools { flex-wrap: wrap; }
+  .tree-tools input[type="search"] { flex: 1 0 100%; width: 100%; }
+  .review-actions .selected-count { flex: 1 0 100%; }
+  .review-actions button { flex: 1; padding-left: 7px; padding-right: 7px; }
+}
+
 .filelist {
   list-style: none;
   margin-top: 8px;

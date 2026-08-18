@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kement eşitleme karar arayüzü</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>
+html { background: #111; }
+body { width: 100%; max-width: 440px; min-height: 720px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo" aria-hidden="true">◯</span>
+  <h1>kement</h1>
+  <span class="sub">topla · bağla · eşitle</span>
+</header>
+
+<section class="card">
+  <h2>Eşitle</h2>
+  <p class="hint">Kaynaktaki yeni/değişen dosyaları aynalara kopyalar. Üzerine yazmadan önce eskisini yedekler. Yalnızca aynada bulunanları gösterir ve ne yapılacağını sana sorar.</p>
+  <div class="row path">
+    <span class="tag src">Kaynak</span>
+    <input value="/Volumes/A_MASTER/Belgesel" readonly>
+    <button>Seç</button>
+  </div>
+  <div class="row path">
+    <span class="tag">Ayna 1</span>
+    <input value="/Volumes/B_YEDEK/Belgesel" readonly>
+    <button>Seç</button>
+  </div>
+  <div class="btnrow">
+    <button class="primary">Tara</button>
+    <button class="primary" disabled>Eşitle</button>
+  </div>
+  <div class="summary">
+    <div class="mirrorline"><b>B_YEDEK</b>: <span class="ok">2 yeni</span> · <span class="warn">5 yalnızca aynada — karar gerekli</span></div>
+  </div>
+
+  <div class="mirror-review">
+    <div class="review-head">
+      <div>
+        <div class="review-title">Aynada olup kaynakta olmayanlar</div>
+        <div class="review-stats">1 ayna · 3 klasör · 5 dosya · 18.4 GB</div>
+      </div>
+    </div>
+    <div>
+      <p class="review-question">Bunları kaynak A'ya da alayım mı?</p>
+      <p class="review-note">Seçtiklerin önce aynı klasör yapısıyla A'ya kopyalanır. Sonra güncel A → B planı yeniden gösterilir. Seçmediklerin B'de yerinde kalır.</p>
+      <div class="tree-tools">
+        <input type="search" placeholder="Dosya veya klasör ara…">
+        <label class="check-action"><input type="checkbox"> Tümünü seç</label>
+        <button class="ghost compact">Temizle</button>
+      </div>
+      <div class="mirror-trees">
+        <div class="mirror-tree">
+          <div class="mirror-tree-head">
+            <input type="checkbox" class="tree-check">
+            <span class="mirror-tree-name">B_YEDEK</span>
+            <span class="mirror-tree-meta">5 dosya · 18.4 GB</span>
+          </div>
+          <div class="tree-branch">
+            <div class="tree-row tree-folder" style="padding-left:8px">
+              <button class="tree-toggle">▾</button><input type="checkbox" class="tree-check">
+              <span class="tree-icon">▰</span><span class="tree-label">Eski Çekimler</span><span class="tree-meta">3 · 16.8 GB</span>
+            </div>
+            <div class="tree-children">
+              <div class="tree-row tree-file" style="padding-left:23px">
+                <button class="tree-toggle" disabled></button><input type="checkbox" class="tree-check" checked>
+                <span class="tree-icon">•</span><span class="tree-label">röportaj_04.mov</span><span class="tree-meta">12.1 GB</span>
+              </div>
+              <div class="tree-row tree-file" style="padding-left:23px">
+                <button class="tree-toggle" disabled></button><input type="checkbox" class="tree-check">
+                <span class="tree-icon">•</span><span class="tree-label">drone_yedek.mov</span><span class="tree-meta">4.7 GB</span>
+              </div>
+              <div class="tree-branch">
+                <div class="tree-row tree-folder" style="padding-left:23px">
+                  <button class="tree-toggle">▸</button><input type="checkbox" class="tree-check">
+                  <span class="tree-icon">▰</span><span class="tree-label">Ses</span><span class="tree-meta">1 · 42 MB</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tree-branch">
+            <div class="tree-row tree-folder" style="padding-left:8px">
+              <button class="tree-toggle">▸</button><input type="checkbox" class="tree-check">
+              <span class="tree-icon">▰</span><span class="tree-label">Kişisel</span><span class="tree-meta">2 · 1.6 GB</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="review-actions">
+        <span class="selected-count">1 dosya · 12.1 GB seçili</span>
+        <button>Hepsini B'de bırak</button>
+        <button class="primary">Seçimi onayla</button>
+      </div>
+    </div>
+  </div>
+</section>
+</body>
+</html>

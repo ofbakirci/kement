@@ -159,7 +159,7 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
 <section class="card">
   <h2>Eşitle</h2>
   <p class="hint">Kaynaktaki yeni/değişen dosyaları aynalara kopyalar. Üzerine yazmadan
-     önce eskisini yedekler, sadece adı değişen dosyayı kopyalamak yerine yeniden adlandırır.</p>
+     önce eskisini yedekler. Yalnızca aynada bulunanları gösterir ve ne yapılacağını sana sorar.</p>
 
   <div class="row path">
     <span class="tag src">Kaynak</span>
@@ -184,6 +184,40 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
   </div>
 
   <div id="syncSummary" class="summary"></div>
+
+  <div id="mirrorOnlyReview" class="mirror-review hidden">
+    <div class="review-head">
+      <div>
+        <div class="review-title">Aynada olup kaynakta olmayanlar</div>
+        <div id="mirrorOnlyStats" class="review-stats" role="status"></div>
+      </div>
+    </div>
+
+    <div id="mirrorOnlyEditor">
+      <p class="review-question">Bunları kaynak A'ya da alayım mı?</p>
+      <p class="review-note">Seçtiklerin önce aynı klasör yapısıyla A'ya kopyalanır. Sonra güncel A → B planı yeniden gösterilir. Seçmediklerin B'de yerinde kalır.</p>
+
+      <div class="tree-tools">
+        <input id="mirrorOnlySearch" type="search" placeholder="Dosya veya klasör ara…" aria-label="Aynaya özgü dosyalarda ara">
+        <label class="check-action"><input id="selectAllMirrorOnly" type="checkbox"> Tümünü seç</label>
+        <button id="clearMirrorOnly" class="ghost compact">Temizle</button>
+      </div>
+
+      <div id="mirrorOnlyTrees" class="mirror-trees"></div>
+
+      <div id="mirrorOnlyConflict" class="review-conflict hidden"></div>
+      <div class="review-actions">
+        <span id="mirrorOnlySelected" class="selected-count" role="status">0 öğe seçili</span>
+        <button id="leaveMirrorOnly">Hepsini B'de bırak</button>
+        <button id="confirmMirrorOnly" class="primary" disabled>Seçimi onayla</button>
+      </div>
+    </div>
+
+    <div id="mirrorOnlyDecision" class="decision-summary hidden">
+      <span id="mirrorOnlyDecisionText" role="status"></span>
+      <button id="changeMirrorOnlyDecision" class="ghost compact">Değiştir</button>
+    </div>
+  </div>
 </section>
 
 <!-- ── İlerleme ──────────────────────────────────── -->

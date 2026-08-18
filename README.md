@@ -14,21 +14,23 @@ içerikte dosya varsa `(2)` ekleyerek çakışmayı önler; içerik aynıysa
 kopyalamaz, sadece bağlar.
 
 ### Eşitle
-Kaynak → Ayna 1 (+ isteğe bağlı Ayna 2) tek yönlü incremental mirror.
+Ana akış Kaynak → Ayna 1 (+ isteğe bağlı Ayna 2) incremental mirror'dır.
 Yol olarak diskin kendisi de (`/Volumes/DiskAdı`) bir klasör de seçilebilir.
 
 Kurallar:
-- **Sadece fark kopyalanır.** Boyut + değişiklik tarihi aynı olan dosyaya dokunulmaz.
+- **Sadece fark kopyalanır.** Dosyalar tam SHA-256 içerik özetiyle karşılaştırılır.
 - **Yedeksiz üzerine yazılmaz.** Güncellenen dosyanın eski hali aynadaki
   `_kement_yedek/<tarih-saat>/` klasörüne taşınır.
-- **Silme yok.** Kaynakta artık olmayan dosyalar silinmez, aynı yedek klasörüne taşınır.
-- **Rename algılama.** Kaynakta sadece adı/konumu değişen dosya (boyut + baş/son
-  256KB sha1 parmak izi eşleşmesiyle) tespit edilir ve aynada gigabaytlarca
-  kopya yapmak yerine sadece **yeniden adlandırılır**.
-- Önce **Tara** → ne yapılacağını gösterir (kaç yeni, kaç güncelleme, kaç rename,
-  kaç arşiv), sonra **Eşitle** → uygular. Süreç progress bar'da izlenir.
-- Kopyalar önce `.kement-part` geçici dosyasına yazılır, bitince adlandırılır —
-  yarım kopya asla gerçek dosya gibi görünmez. Değişiklik tarihleri korunur.
+- **Aynaya özgü dosyaya dokunulmaz.** B'de olup A'da olmayan dosyalar klasör
+  ağacında gösterilir. Seçtiklerin aynı yoluyla A'ya kopyalanır; seçmediklerin
+  B'de yerinde kalır.
+- Önce **Tara** → A → B planını ve yalnızca B'de bulunanları gösterir. Seçtiğin
+  B dosyaları önce A'ya alınır. Kement sonra güncel A → B planını yeniden
+  gösterir; ikinci onayla aynaları eşitler. Süreç progress bar'da izlenir ve
+  A'daki her dosyanın aynaya geçtiği tam SHA-256 içerik özetiyle doğrulanır.
+- Kopyalar önce benzersiz `.kement-part-*` geçici dosyasına yazılır ve tam
+  içerikle doğrulanır. Hedef bu sırada oluşur veya değişirse üzerine yazılmaz.
+  Değişiklik tarihleri korunur.
 - Aynadaki bir dosya kaynaktakinden daha yeniyse tarama sırasında uyarır
   (yanlış yönde eşitlemeye karşı sigorta).
 
@@ -57,15 +59,17 @@ tercihini açar (CEP 9–12). Kod güncellenince Premiere'i yeniden başlatmak y
 
 - `CSXS/manifest.xml` — CEP manifest (Premiere 13.0+, Node.js açık)
 - `index.html` + `css/style.css` — panel arayüzü
-- `js/main.js` — eşitleme motoru, rename algılama, toplama akışı, UI
+- `js/main.js` — eşitleme motoru, içerik doğrulama, toplama akışı, UI
 - `jsx/kement.jsx` — ExtendScript: proje medya yollarını okuma + relink
+- `tests/sync-engine.test.js` — dosya sistemi eşitleme güvenlik senaryoları
 - `assets/kement.svg` — logo: [koboyo](https://koboyo.com/icons/cartoon-lasso)
   el çizimi "cartoon-lasso" ikonu (ticari kullanım dahil ücretsiz lisans)
 
 ## Notlar
 
-- Eşitleme tek yönlü: Kaynak her zaman doğru kabul edilir. İki yönlü sync
-  bilinçli olarak yok (video arşivinde iki yönlü sync veri kaybı davetiyesidir).
+- Kaynak, A → B yönünde master kabul edilir. Otomatik iki yönlü merge yoktur.
+  Yalnızca açıkça seçtiğin B'ye özgü dosyalar A'ya geri kopyalanır.
 - `.DS_Store`, `.Spotlight-V100`, `.Trashes` gibi sistem çöpleri ve `._*`
   AppleDouble dosyaları es geçilir.
-- `_kement_yedek` klasörü eşitleme kapsamı dışındadır; ara sıra elle boşalt.
+- `_kement_yedek` yalnızca üzerine yazılan eski sürümleri tutar ve eşitleme
+  kapsamı dışındadır; ara sıra elle boşalt.
