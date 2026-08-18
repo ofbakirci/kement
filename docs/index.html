@@ -92,6 +92,49 @@ body {
 .rules li b { color: #fff; }
 .rules li.w { border-left-color: var(--warn); }
 
+.changelog { margin: 24px 0 48px; }
+.changelog > h2 { color: #fff; font-size: 22px; margin-bottom: 18px; text-align: center; }
+.release-list { display: grid; gap: 12px; }
+.release {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.release.current { border-left: 3px solid var(--ok); }
+.release-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 9px;
+}
+.release h3 { font-size: 17px; color: #fff; }
+.release h3 a { color: var(--accent); text-decoration: none; }
+.release h3 a:hover { text-decoration: underline; }
+.release .badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(111, 191, 115, 0.12);
+  color: var(--ok);
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+.release time { flex: 0 0 auto; color: var(--dim); font-size: 12.5px; }
+.release ul { margin-left: 19px; color: var(--dim); font-size: 14px; }
+.release li + li { margin-top: 5px; }
+.release li b { color: #fff; }
+.release-link { margin-top: 14px; text-align: center; font-size: 13px; }
+.release-link a { color: var(--accent); text-decoration: none; }
+.release-link a:hover { text-decoration: underline; }
+@media (max-width: 480px) {
+  .release-head { display: block; }
+  .release time { display: block; margin-top: 2px; }
+}
+
 .install { margin: 24px 0 64px; }
 .install h2 { color: #fff; font-size: 22px; margin-bottom: 14px; text-align: center; }
 .install p { color: var(--dim); text-align: center; margin-bottom: 16px; font-size: 14.5px; }
@@ -256,6 +299,7 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
     <div class="cta">
       <a class="btn primary" href="https://github.com/ofbakirci/kement/releases/latest">İndir (.zxp)</a>
       <a class="btn ghost" href="#kurulum">Kurulum</a>
+      <a class="btn ghost" href="#degisiklikler">Sürüm notları</a>
       <a class="btn ghost" href="https://github.com/ofbakirci/kement">GitHub</a>
     </div>
   </section>
@@ -293,6 +337,36 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
       <li class="w"><b>Ters yöne karşı uyarır.</b> Aynadaki dosya kaynaktakinden daha
         yeniyse eşitlemeden önce haber verir.</li>
     </ul>
+  </section>
+
+  <section class="changelog" id="degisiklikler">
+    <h2>Sürüm notları</h2>
+    <div class="release-list">
+      <article class="release current">
+        <div class="release-head">
+          <h3><a href="https://github.com/ofbakirci/kement/releases/tag/v0.2.0">v0.2.0</a><span class="badge">güncel</span></h3>
+          <time datetime="2026-08-18">18 Ağustos 2026</time>
+        </div>
+        <ul>
+          <li><b>Aynaya özgü dosyalar korunuyor.</b> B'de olup A'da olmayanlar taşınmıyor. Klasör ağacında gösteriliyor; yalnızca seçtiklerin A'ya kopyalanıyor.</li>
+          <li><b>Plan yeniden onaylanıyor.</b> A → B planı, B'den A'ya alınan dosyalardan sonra yeniden hazırlanıyor.</li>
+          <li><b>Kopyalar doğrulanıyor.</b> Tam SHA-256 kontrolü yapılıyor. Eşitleme sırasında değişen hedef dosyaların üzerine yazılmıyor.</li>
+          <li><b>Çoklu aynalar birlikte kontrol ediliyor.</b> Son doğrulama aynı kaynak görüntüsüne göre yapılıyor.</li>
+        </ul>
+      </article>
+      <article class="release">
+        <div class="release-head">
+          <h3><a href="https://github.com/ofbakirci/kement/releases/tag/v0.1.0">v0.1.0</a></h3>
+          <time datetime="2026-08-14">14 Ağustos 2026</time>
+        </div>
+        <ul>
+          <li>İlk yayın: Topla &amp; Bağla, otomatik relink ve incremental A → B eşitleme.</li>
+          <li>Üzerine yazılan eski dosyalar için <code>_kement_yedek</code> koruması.</li>
+          <li>Premiere Pro 2019 ve üzeri için imzalı ZXP paketi.</li>
+        </ul>
+      </article>
+    </div>
+    <p class="release-link"><a href="https://github.com/ofbakirci/kement/releases">GitHub'daki tüm sürümler →</a></p>
   </section>
 
   <section class="install" id="kurulum">
