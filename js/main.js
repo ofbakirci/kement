@@ -1941,6 +1941,9 @@ function renderRenameReview() {
 
 function setRenameDecision(value) {
   renameDecision = value;
+  document.querySelectorAll('input[name="renameMode"]').forEach((radio) => {
+    radio.checked = radio.value === value;
+  });
   const label = {
     mirror: "B'deki dosyalar A'daki ada taşınacak.",
     source: "A'daki dosyalar B'deki ada taşınacak; sonra güncel plan gösterilecek.",
@@ -2502,6 +2505,12 @@ async function doApplySync() {
       syncPlans = refreshed.plans;
       renderMirrorOnlyReview();
       renderSyncPlanSummary();
+      if (renamesPending()) {
+        // A artık bir aynanın adlarını taşıyor; öteki aynada aynı dosyalar şimdi
+        // "yalnızca adı farklı" görünür. Doğal devam: onlara da aynı adı ver.
+        setRenameDecision('mirror');
+        log('Yeni adlar A\'da. Öteki aynadaki aynı dosyalar için "B\'de yeniden adlandır" seçili geldi; Eşitle ile onayla.', 'warn');
+      }
       const stillWork = syncPlans.some(hasForwardWork) || syncPlans.some((p) => p.mirrorOnly.length);
       if (stillWork) {
         log('A güncellendi. Güncel A → B planını gösterdim; kararları yeniden ver ve onayla.', 'warn');

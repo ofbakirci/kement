@@ -654,7 +654,39 @@ async function run() {
       assert.strictEqual(plan.unverified[0].newPath, path.join(b, 'Audio/gone.wav'));
     }
 
-    console.log('sync-engine: 28 senaryo geçti');
+    // Ad değişikliği yalnız bir aynada (B1) yapıldıysa: A, B1'in adını alır;
+    // yeni planda B2 "yalnızca adı farklı" çıkar ve B'de yeniden adlandırma ile
+    // B2 de aynı adı alır. Sonunda üç disk de aynı ada sahiptir, kopya yok.
+    {
+      const a = path.join(tempRoot, 'propagate-a');
+      const b1 = path.join(tempRoot, 'propagate-b1');
+      const b2 = path.join(tempRoot, 'propagate-b2');
+      write(a, 'Cam/aa342.mov', 'clip-1');
+      write(b1, 'Cam/ACam_aa342.mov', 'clip-1');
+      write(b2, 'Cam/aa342.mov', 'clip-1');
+      const first = [await deepPlan(a, b1), await deepPlan(a, b2)];
+      assert.strictEqual(first[0].renames.length, 1);
+      assert.strictEqual(first[1].renames.length, 0);
+      assert.strictEqual(first[1].sameCount, 1);
+      const prepared = engine.prepareSourceRenames(first);
+      assert.strictEqual(prepared.errors.length, 0);
+      const report = await engine.applySourceRenames(prepared, progress);
+      assert.strictEqual(report.renamed, 1);
+      const second = [await deepPlan(a, b1), await deepPlan(a, b2)];
+      assert.strictEqual(second[0].sameCount, 1);
+      assert.strictEqual(second[1].renames.length, 1);
+      assert.strictEqual(second[1].renames[0].rel, 'Cam/ACam_aa342.mov');
+      assert.strictEqual(second[1].renames[0].fromRel, 'Cam/aa342.mov');
+      const applied = await engine.applyMirror(second[1], progress);
+      assert.strictEqual(applied.renamed, 1);
+      assert.strictEqual(applied.copied, 0);
+      for (const root of [a, b1, b2]) {
+        assert.ok(fs.existsSync(path.join(root, 'Cam/ACam_aa342.mov')));
+        assert.ok(!fs.existsSync(path.join(root, 'Cam/aa342.mov')));
+      }
+    }
+
+    console.log('sync-engine: 29 senaryo geçti');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
