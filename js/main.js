@@ -17,6 +17,85 @@ const cp = req('child_process');
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+/* ── Durdurma / duraklatma ───────────────────────────────────── */
+// Uzun tarama/doğrulama aşamaları kullanıcı isteğiyle duraklatılabilir veya
+// kesilebilir. Sadece okuma yapan aşamalarda "silahlanır"; yazma aşamalarında
+// butonlar gizlidir ve checkStop hiçbir zaman fırlatmaz/beklemez.
+
+class StopError extends Error {
+  constructor() {
+    super('Kullanıcı durdurdu');
+    this.name = 'StopError';
+    this.stopped = true;
+  }
+}
+let stopArmed = false;
+let stopRequested = false;
+let pauseRequested = false;
+let pauseWaiters = [];
+
+// Kontrol noktası: durdurma istendiyse fırlatır, duraklatıldıysa devam
+// edilene (veya durdurulana) kadar bekler. Silahsızken anında döner.
+async function checkStop() {
+  if (stopArmed && stopRequested) throw new StopError();
+  while (stopArmed && pauseRequested) {
+    await new Promise((resolve) => pauseWaiters.push(resolve));
+    if (stopArmed && stopRequested) throw new StopError();
+  }
+}
+function wakePaused() {
+  const waiters = pauseWaiters;
+  pauseWaiters = [];
+  for (const resolve of waiters) resolve();
+}
+function renderStopControls() {
+  const stopBtn = $('stopOp');
+  const pauseBtn = $('pauseOp');
+  const card = $('progressCard');
+  if (!stopBtn || !pauseBtn || !card) return;
+  stopBtn.classList.toggle('hidden', !stopArmed);
+  pauseBtn.classList.toggle('hidden', !stopArmed);
+  stopBtn.disabled = stopRequested;
+  stopBtn.textContent = stopRequested ? 'Durduruluyor…' : 'Durdur';
+  pauseBtn.disabled = stopRequested;
+  pauseBtn.textContent = pauseRequested ? 'Devam' : 'Duraklat';
+  card.classList.toggle('paused', stopArmed && pauseRequested && !stopRequested);
+}
+function armStop() {
+  stopRequested = false;
+  pauseRequested = false;
+  stopArmed = true;
+  renderStopControls();
+}
+function disarmStop() {
+  stopArmed = false;
+  stopRequested = false;
+  pauseRequested = false;
+  wakePaused();
+  renderStopControls();
+}
+function requestStop() {
+  if (!stopArmed) return;
+  stopRequested = true;
+  wakePaused(); // duraklatılmışsa bekleyen noktayı uyandır ki fırlatsın
+  renderStopControls();
+}
+function togglePause() {
+  if (!stopArmed || stopRequested) return;
+  pauseRequested = !pauseRequested;
+  if (!pauseRequested) wakePaused();
+  renderStopControls();
+}
+
+// Asenkron okuma: UI iş parçacığını bloke etmez, Durdur tıklaması işlenebilir.
+function readAt(fd, buffer, offset, length, position) {
+  return new Promise((resolve, reject) => {
+    fs.read(fd, buffer, offset, length, position, (err, n) => {
+      if (err) reject(err); else resolve(n);
+    });
+  });
+}
+
 const BACKUP_DIR = '_kement_yedek';
 const SKIP_NAMES = new Set([
   '.DS_Store', '.Spotlight-V100', '.fseventsd', '.Trashes', '.TemporaryItems',
@@ -30,9 +109,11 @@ function evalScript(script) {
   return new Promise((resolve) => window.__adobe_cep__.evalScript(script, resolve));
 }
 
+const JSX_VERSION = '0.3.0';
+
 async function ensureJSX() {
-  const t = await evalScript('typeof ESL');
-  if (t !== 'object') {
+  const v = await evalScript('(typeof ESL === "object" && ESL.version) || ""');
+  if (v !== JSX_VERSION) {
     const extPath = decodeURIComponent(
       window.__adobe_cep__.getSystemPath('extension')
     ).replace(/^file:\/\//, '');
@@ -208,7 +289,7 @@ async function walk(root) {
           ino: st.ino,
         });
       }
-      if (++n % 400 === 0) await tick();
+      if (++n % 400 === 0) { await tick(); await checkStop(); }
     }
   }
   return out;
@@ -217,36 +298,57 @@ async function walk(root) {
 // Hızlı parmak izi: küçük dosyanın tamamı; büyük dosyanın beş ayrı 256 KB
 // bölgesi. Büyük videoyu baştan sona okumadan güçlü bir pratik içerik kontrolü
 // sağlar.
-function fingerprint(absPath, size) {
+function fingerprintRegions(size) {
   const CH = 256 * 1024;
+  if (size <= 0) return [];
+  if (size <= CH * 5) return [[0, size]];
+  return [
+    0,
+    Math.floor(size * 0.25 - CH / 2),
+    Math.floor(size * 0.50 - CH / 2),
+    Math.floor(size * 0.75 - CH / 2),
+    size - CH,
+  ].map((position) => [position, CH]);
+}
+
+// Eşzamanlı sürüm: kısa, tekil kontroller için (toplama, B→A seçim onayı).
+function fingerprint(absPath, size) {
   const h = crypto.createHash('sha256');
   const fd = fs.openSync(absPath, 'r');
   try {
-    if (size > 0) {
-      const readRegion = (position, length) => {
-        const buffer = Buffer.alloc(length);
-        let done = 0;
-        while (done < length) {
-          const n = fs.readSync(fd, buffer, done, length - done, position + done);
-          if (!n) throw new Error('Dosya beklenenden erken bitti');
-          done += n;
-        }
-        h.update(String(position) + ':' + String(length) + ':');
-        h.update(buffer);
-      };
-
-      if (size <= CH * 5) {
-        readRegion(0, size);
-      } else {
-        const positions = [
-          0,
-          Math.floor(size * 0.25 - CH / 2),
-          Math.floor(size * 0.50 - CH / 2),
-          Math.floor(size * 0.75 - CH / 2),
-          size - CH,
-        ];
-        for (const position of positions) readRegion(position, CH);
+    for (const [position, length] of fingerprintRegions(size)) {
+      const buffer = Buffer.alloc(length);
+      let done = 0;
+      while (done < length) {
+        const n = fs.readSync(fd, buffer, done, length - done, position + done);
+        if (!n) throw new Error('Dosya beklenenden erken bitti');
+        done += n;
       }
+      h.update(String(position) + ':' + String(length) + ':');
+      h.update(buffer);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return size + ':' + h.digest('hex');
+}
+
+// Asenkron sürüm: tarama döngüsünde kullanılır; fingerprint() ile birebir
+// aynı değeri üretir (snapshot'taki değerle sonradan karşılaştırılıyor).
+async function fingerprintAsync(absPath, size) {
+  const h = crypto.createHash('sha256');
+  const fd = fs.openSync(absPath, 'r');
+  try {
+    for (const [position, length] of fingerprintRegions(size)) {
+      const buffer = Buffer.alloc(length);
+      let done = 0;
+      while (done < length) {
+        const n = await readAt(fd, buffer, done, length - done, position + done);
+        if (!n) throw new Error('Dosya beklenenden erken bitti');
+        done += n;
+      }
+      h.update(String(position) + ':' + String(length) + ':');
+      h.update(buffer);
     }
   } finally {
     fs.closeSync(fd);
@@ -277,13 +379,13 @@ async function fullFingerprint(absPath, size, onBytes) {
   let after;
   try {
     while (position < size) {
+      await checkStop();
       const wanted = Math.min(buffer.length, size - position);
-      const n = fs.readSync(fd, buffer, 0, wanted, position);
+      const n = await readAt(fd, buffer, 0, wanted, position);
       if (!n) throw new Error('Dosya beklenenden erken bitti');
       h.update(n === buffer.length ? buffer : buffer.slice(0, n));
       position += n;
       if (onBytes) onBytes(n);
-      await tick();
     }
     after = fs.fstatSync(fd);
   } finally {
@@ -505,8 +607,9 @@ async function createRootSnapshot(root, options) {
     const abs = path.join(root, file.rel);
     let contentFingerprint;
     let fullContentFingerprint = null;
+    await checkStop();
     try {
-      contentFingerprint = fingerprint(abs, file.size);
+      contentFingerprint = await fingerprintAsync(abs, file.size);
       if (needsFull(file)) {
         fullContentFingerprint = await fullFingerprint(abs, file.size, (n) => {
           doneBytes += n;
@@ -521,6 +624,7 @@ async function createRootSnapshot(root, options) {
         });
       }
     } catch (e) {
+      if (e.stopped) throw e;
       throw new Error(`Dosya doğrulanamadı: ${abs} — ${e.message}`);
     }
     files.push(Object.assign({}, file, {
@@ -535,7 +639,7 @@ async function createRootSnapshot(root, options) {
       doneBytes,
       totalBytes,
     });
-    if (!deep && i % 20 === 19) await tick();
+    if (!deep) await tick();
   }
   return { root: path.resolve(root), deep, files };
 }
@@ -578,6 +682,7 @@ async function planMirror(srcRoot, dstRoot, options) {
     srcRoot, dstRoot,
     copies: [],      // kaynakta var, aynada yok → kopyala
     overwrites: [],  // ikisinde de var ama farklı → yedekle + kopyala
+    renames: [],     // içerik aynı, yol farklı (ad değişmiş/taşınmış) → kullanıcıya sor
     mirrorOnly: [],  // aynada var, kaynakta aynı yol yok → kullanıcıya sor
     sameCount: 0,
     bytes: 0,
@@ -623,7 +728,138 @@ async function planMirror(srcRoot, dstRoot, options) {
     }
   }
   plan.mirrorOnly = dstList.filter((f) => !srcMap.has(f.rel));
+  detectRenames(plan, srcMap, deep);
   return plan;
+}
+
+// Yolu eşleşmeyen kaynak dosyası ile yolu eşleşmeyen ayna dosyası aynı
+// içerikteyse (boyut + parmak izi) ve eşleşme iki yönde de tekse bu bir ad
+// değişikliği / taşımadır: kopyalamak yerine kullanıcıya sorulur. Aynı içerikten
+// birden fazla kopya varsa hangi adın hangisine gittiği belirsizdir; o dosyalar
+// eskisi gibi kopya / aynaya özgü olarak kalır.
+function detectRenames(plan, srcMap, deep) {
+  const keyOf = (size, quick, full) => {
+    const fp = deep ? full : quick;
+    return fp ? size + '|' + fp : null;
+  };
+  const bySrc = new Map();
+  for (const c of plan.copies) {
+    const key = keyOf(c.size, c.srcFingerprint, c.srcFullFingerprint);
+    if (!key) continue;
+    if (!bySrc.has(key)) bySrc.set(key, []);
+    bySrc.get(key).push(c);
+  }
+  const byDst = new Map();
+  for (const d of plan.mirrorOnly) {
+    const key = keyOf(d.size, d.contentFingerprint, d.fullContentFingerprint);
+    if (!key) continue;
+    if (!byDst.has(key)) byDst.set(key, []);
+    byDst.get(key).push(d);
+  }
+  const matchedSrc = new Set();
+  const matchedDst = new Set();
+  for (const [key, srcGroup] of bySrc) {
+    const dstGroup = byDst.get(key);
+    if (!dstGroup || srcGroup.length !== 1 || dstGroup.length !== 1) continue;
+    const c = srcGroup[0];
+    const d = dstGroup[0];
+    const f = srcMap.get(c.rel);
+    plan.renames.push({
+      rel: c.rel,           // A'daki yol (hedef ad)
+      fromRel: d.rel,       // B'deki mevcut yol
+      size: c.size,
+      srcMtimeMs: c.srcMtimeMs,
+      srcCtimeMs: c.srcCtimeMs,
+      srcDev: f ? f.dev : undefined,
+      srcIno: f ? f.ino : undefined,
+      srcFingerprint: c.srcFingerprint,
+      srcFullFingerprint: c.srcFullFingerprint,
+      dstMtimeMs: d.mtimeMs,
+      dstCtimeMs: d.ctimeMs,
+      dstDev: d.dev,
+      dstIno: d.ino,
+      dstFingerprint: d.contentFingerprint,
+      dstFullFingerprint: d.fullContentFingerprint,
+    });
+    matchedSrc.add(c);
+    matchedDst.add(d);
+  }
+  if (!plan.renames.length) return;
+  plan.renames.sort((a, b) => a.rel.localeCompare(b.rel));
+  plan.copies = plan.copies.filter((c) => !matchedSrc.has(c));
+  plan.mirrorOnly = plan.mirrorOnly.filter((d) => !matchedDst.has(d));
+  plan.bytes -= plan.renames.reduce((sum, r) => sum + r.size, 0);
+}
+
+// "Dokunma" kararı: ad değişiklikleri eski davranışa döner — A'daki ad ile
+// kopyalanır, B'deki eski ad aynaya özgü dosya olarak yerinde kalır.
+function expandRenames(plan) {
+  if (!plan.renames || !plan.renames.length) return plan;
+  const copies = plan.copies.concat(plan.renames.map((r) => ({
+    rel: r.rel,
+    size: r.size,
+    srcMtimeMs: r.srcMtimeMs,
+    srcCtimeMs: r.srcCtimeMs,
+    srcFingerprint: r.srcFingerprint,
+    srcFullFingerprint: r.srcFullFingerprint,
+  })));
+  const mirrorOnly = plan.mirrorOnly.concat(plan.renames.map((r) => ({
+    rel: r.fromRel,
+    size: r.size,
+    mtimeMs: r.dstMtimeMs,
+    ctimeMs: r.dstCtimeMs,
+    dev: r.dstDev,
+    ino: r.dstIno,
+    contentFingerprint: r.dstFingerprint,
+    fullContentFingerprint: r.dstFullFingerprint,
+  })));
+  return Object.assign({}, plan, {
+    copies,
+    mirrorOnly,
+    renames: [],
+    bytes: plan.bytes + plan.renames.reduce((sum, r) => sum + r.size, 0),
+  });
+}
+
+// Yeniden adlandırma öncesi ucuz ama sıkı kontrol: aynı dosya nesnesi (dev/ino),
+// aynı boyut/zamanlar ve aynı hızlı parmak izi. İçerik değişmiyor, yalnızca
+// ad/yol değişiyor; bu yüzden tam içerik okuması tekrar yapılmaz (tarama ve
+// ön kontrol zaten yaptı).
+async function renameVerified(root, fromRel, toRel, expected) {
+  const from = path.join(root, fromRel);
+  const to = path.join(root, toRel);
+  assertSafePath(root, from);
+  assertSafePath(root, to);
+  let before;
+  try { before = fs.lstatSync(from); }
+  catch (e) { throw new Error('Dosya bulunamadı: ' + fromRel); }
+  if (before.isSymbolicLink() || !before.isFile()) {
+    throw new Error('Sembolik bağlantı veya klasör yeniden adlandırılmadı: ' + fromRel);
+  }
+  if (before.size !== expected.size ||
+      before.mtimeMs !== expected.mtimeMs || before.ctimeMs !== expected.ctimeMs ||
+      (expected.dev !== undefined && before.dev !== expected.dev) ||
+      (expected.ino !== undefined && before.ino !== expected.ino)) {
+    throw new Error('Dosya taramadan sonra değişti: ' + fromRel);
+  }
+  const currentFingerprint = await fingerprintAsync(from, expected.size);
+  if (currentFingerprint !== expected.fingerprint) {
+    throw new Error('Dosyanın içeriği taramadan sonra değişti: ' + fromRel);
+  }
+  let toExists = false;
+  try { fs.lstatSync(to); toExists = true; } catch (_) {}
+  if (toExists) throw new Error('Hedef ad zaten var; üzerine yazılmadı: ' + toRel);
+  ensureDir(path.dirname(to));
+  assertSafePath(root, to);
+  const beforeMove = fs.lstatSync(from);
+  if (!sameStableStats(before, beforeMove)) {
+    throw new Error('Dosya yeniden adlandırma anında değişti: ' + fromRel);
+  }
+  fs.renameSync(from, to);
+  const after = fs.lstatSync(to);
+  if (!sameFileObject(before, after) || after.size !== before.size) {
+    throw new Error('Yeniden adlandırma sonrası dosya doğrulanamadı: ' + toRel);
+  }
 }
 
 async function applyMirror(plan, progress, options) {
@@ -633,8 +869,9 @@ async function applyMirror(plan, progress, options) {
     throw new Error('Uygulama öncesi tam içerik doğrulaması gerekli');
   }
   let backupRoot = null;
-  const report = { copied: 0, overwritten: 0, errors: [], backupRoot: null };
-  const totalFiles = plan.copies.length + plan.overwrites.length;
+  const report = { copied: 0, overwritten: 0, renamed: 0, errors: [], backupRoot: null };
+  const renames = plan.renames || [];
+  const totalFiles = renames.length + plan.copies.length + plan.overwrites.length;
   let doneFiles = 0, doneBytes = 0;
 
   const step = (label) => {
@@ -645,6 +882,25 @@ async function applyMirror(plan, progress, options) {
     doneBytes += n;
     progress({ doneFiles, totalFiles, doneBytes, totalBytes: plan.bytes });
   };
+
+  // 0) Ad değişiklikleri: B'deki dosya A'daki yola taşınır. Kopya yok, içerik
+  // değişmez; hedef ad doluysa dokunulmaz.
+  for (const f of renames) {
+    try {
+      await renameVerified(plan.dstRoot, f.fromRel, f.rel, {
+        size: f.size,
+        mtimeMs: f.dstMtimeMs,
+        ctimeMs: f.dstCtimeMs,
+        dev: f.dstDev,
+        ino: f.dstIno,
+        fingerprint: f.dstFingerprint,
+      });
+      report.renamed++;
+    } catch (e) {
+      report.errors.push(`Yeniden adlandırma ${f.fromRel} → ${f.rel}: ${e.message}`);
+    }
+    step(f.rel);
+  }
 
   // 1) Üzerine yazılacaklar: yeni sürüm önce temp'e alınır ve doğrulanır.
   // Eski B dosyası uzun kopya boyunca yerinde kalır.
@@ -744,6 +1000,179 @@ async function applyMirror(plan, progress, options) {
   // Aynaya özgü dosyalar bu fonksiyonun kapsamı dışındadır. Kullanıcının
   // seçmedikleri aynada, aynı yolunda kalır.
   return report;
+}
+
+// Karar "A'da yeniden adlandır": her ayna için tespit edilen çiftlerde A'daki
+// dosya B'deki ada taşınır. İki ayna aynı A dosyasına farklı ad veriyorsa veya
+// hedef ad A'da doluysa o dosya atlanır ve hata olarak bildirilir.
+function prepareSourceRenames(plans) {
+  const byRel = new Map();
+  const errors = [];
+  plans.forEach((plan) => {
+    const mirrorName = path.basename(plan.dstRoot) || plan.dstRoot;
+    (plan.renames || []).forEach((r) => {
+      if (!byRel.has(r.rel)) byRel.set(r.rel, []);
+      byRel.get(r.rel).push({ r, mirrorName });
+    });
+  });
+  const files = [];
+  const targets = new Set();
+  for (const [rel, entries] of byRel) {
+    const names = new Set(entries.map((e) => e.r.fromRel));
+    if (names.size > 1) {
+      errors.push(`${rel}: aynalar farklı ad veriyor (${entries.map((e) => e.mirrorName + ': ' + e.r.fromRel).join(' · ')}); A'da dokunulmadı.`);
+      continue;
+    }
+    const first = entries[0].r;
+    if (targets.has(first.fromRel)) {
+      errors.push(`${rel}: aynı hedef ada iki dosya gidiyor (${first.fromRel}); A'da dokunulmadı.`);
+      continue;
+    }
+    targets.add(first.fromRel);
+    files.push({
+      srcRoot: plans[0].srcRoot,
+      rel,
+      toRel: first.fromRel,
+      size: first.size,
+      mtimeMs: first.srcMtimeMs,
+      ctimeMs: first.srcCtimeMs,
+      dev: first.srcDev,
+      ino: first.srcIno,
+      fingerprint: first.srcFingerprint,
+    });
+  }
+  return { files, errors };
+}
+
+async function applySourceRenames(prepared, progress) {
+  const report = { renamed: 0, errors: [] };
+  for (let i = 0; i < prepared.files.length; i++) {
+    const f = prepared.files[i];
+    try {
+      await renameVerified(f.srcRoot, f.rel, f.toRel, {
+        size: f.size, mtimeMs: f.mtimeMs, ctimeMs: f.ctimeMs,
+        dev: f.dev, ino: f.ino, fingerprint: f.fingerprint,
+      });
+      report.renamed++;
+    } catch (e) {
+      report.errors.push(`A'da yeniden adlandırma ${f.rel} → ${f.toRel}: ${e.message}`);
+    }
+    if (progress) progress({ doneFiles: i + 1, totalFiles: prepared.files.length, label: f.toRel });
+  }
+  return report;
+}
+
+/* ── Aynaya bağla: proje öğelerini öteki diskteki kopyaya eşle ───── */
+
+// items: [{name, path}] (projedeki medya yolları). fromRoot altındaki her yol
+// için toRoot'ta karşılık aranır. Doğrulama hızlı parmak iziyle (boyut + beş
+// bölge) yapılır; proje bağlantısı geri alınabilir bir işlem olduğundan tam
+// içerik okunmaz.
+//  direct     : aynı göreli yol, aynı içerik
+//  renamed    : farklı yol, aynı içerik (tek eşleşme; aynı ad varsa o tercih edilir)
+//  ambiguous  : aynı içerikten birden fazla aday, ad da yardım etmiyor
+//  differs    : aynı yolda dosya var ama içerik farklı, başka aday da yok
+//  missing    : toRoot'ta içerik hiç yok
+//  unverified : kaynak çevrimdışı; toRoot'ta yalnızca yol eşleşiyor (doğrulanamadı)
+async function buildRelinkPlan(items, fromRoot, toRoot, onProgress) {
+  onProgress = onProgress || (() => {});
+  const plan = {
+    fromRoot, toRoot,
+    total: 0, elsewhere: 0,
+    direct: [], renamed: [], ambiguous: [], differs: [], missing: [], unverified: [],
+  };
+  const seen = new Set();
+  const unique = [];
+  for (const it of items) {
+    if (!it.path || seen.has(it.path)) continue;
+    seen.add(it.path);
+    unique.push(it);
+  }
+  const inside = unique.filter((it) => isInside(fromRoot, it.path));
+  plan.total = unique.length;
+  plan.elsewhere = unique.length - inside.length;
+
+  let index = null; // boyut → [{rel, size}] (tembel: ilk gerektiğinde bir kez)
+  const ensureIndex = async () => {
+    if (index) return index;
+    const listed = await walk(toRoot);
+    index = new Map();
+    for (const file of listed) {
+      if (!index.has(file.size)) index.set(file.size, []);
+      index.get(file.size).push(file);
+    }
+    return index;
+  };
+  const fpCache = new Map();
+  const fpOf = async (abs, size) => {
+    if (!fpCache.has(abs)) fpCache.set(abs, await fingerprintAsync(abs, size));
+    return fpCache.get(abs);
+  };
+  const statFile = (abs) => {
+    try {
+      const st = fs.statSync(abs);
+      return st.isFile() ? st : null;
+    } catch (_) { return null; }
+  };
+
+  for (let i = 0; i < inside.length; i++) {
+    const it = inside[i];
+    const rel = path.relative(fromRoot, it.path);
+    const candidate = path.join(toRoot, rel);
+    onProgress({ doneFiles: i, totalFiles: inside.length, rel });
+    await checkStop();
+
+    const srcStat = statFile(it.path);
+    if (!srcStat) {
+      const cst = statFile(candidate);
+      if (cst) plan.unverified.push({ name: it.name, oldPath: it.path, newPath: candidate, rel, newRel: rel, size: cst.size });
+      else plan.missing.push({ name: it.name, oldPath: it.path, rel, size: null, offline: true });
+      continue;
+    }
+    const size = srcStat.size;
+    let srcFp;
+    try { srcFp = await fpOf(it.path, size); }
+    catch (e) {
+      plan.missing.push({ name: it.name, oldPath: it.path, rel, size, offline: true, error: e.message });
+      continue;
+    }
+    const cst = statFile(candidate);
+    if (cst && cst.size === size) {
+      let candFp = null;
+      try { candFp = await fpOf(candidate, size); } catch (_) {}
+      if (candFp === srcFp) {
+        plan.direct.push({ name: it.name, oldPath: it.path, newPath: candidate, rel, newRel: rel, size });
+        continue;
+      }
+    }
+
+    // İçerik araması: aynı boyuttaki adaylar, parmak izi ile süzülür.
+    const matches = [];
+    const sameSize = (await ensureIndex()).get(size) || [];
+    for (const file of sameSize) {
+      if (file.rel === rel) continue;
+      const abs = path.join(toRoot, file.rel);
+      try { if (await fpOf(abs, size) === srcFp) matches.push(file); }
+      catch (_) {}
+      await checkStop();
+    }
+    const toEntry = (file) => ({
+      name: it.name, oldPath: it.path, newPath: path.join(toRoot, file.rel), rel, newRel: file.rel, size,
+    });
+    if (matches.length === 1) {
+      plan.renamed.push(toEntry(matches[0]));
+    } else if (matches.length > 1) {
+      const sameName = matches.filter((m) => path.basename(m.rel) === path.basename(rel));
+      if (sameName.length === 1) plan.renamed.push(toEntry(sameName[0]));
+      else plan.ambiguous.push({ name: it.name, oldPath: it.path, rel, size, candidates: matches.map((m) => m.rel) });
+    } else if (cst) {
+      plan.differs.push({ name: it.name, oldPath: it.path, rel, size, candidateSize: cst.size });
+    } else {
+      plan.missing.push({ name: it.name, oldPath: it.path, rel, size, offline: false });
+    }
+  }
+  onProgress({ doneFiles: inside.length, totalFiles: inside.length, rel: '' });
+  return plan;
 }
 
 /* ── İlerleme kartı ──────────────────────────────────────────── */
@@ -914,13 +1343,15 @@ let mirrorOnlySearchByKey = new Map();
 let mirrorOnlyDomId = 0;
 let syncGeneration = 0;
 let syncPathLockCount = 0;
+let renameDecision = null; // null | 'mirror' | 'source' | 'skip'
 
 function mirrorOnlyKey(planIndex, rel) {
   return planIndex + ':' + rel;
 }
 
 function hasForwardWork(plan) {
-  return Boolean(plan.copies.length || plan.overwrites.length);
+  return Boolean(plan.copies.length || plan.overwrites.length ||
+                 (plan.renames && plan.renames.length));
 }
 
 function getAllMirrorOnlyKeys() {
@@ -961,6 +1392,10 @@ function resetMirrorOnlyReview() {
   $('mirrorOnlyEditor').classList.remove('hidden');
   $('mirrorOnlyDecision').classList.add('hidden');
   $('applySync').textContent = 'Eşitle';
+  renameDecision = null;
+  $('renameReview').classList.add('hidden');
+  $('renameList').innerHTML = '';
+  document.querySelectorAll('input[name="renameMode"]').forEach((radio) => { radio.checked = false; });
 }
 
 function invalidateSync() {
@@ -969,6 +1404,8 @@ function invalidateSync() {
   $('applySync').disabled = true;
   $('syncSummary').textContent = '';
   resetMirrorOnlyReview();
+  invalidateRelink();
+  refreshRelinkRoots();
 }
 
 function syncPathSignature(src, mirrors) {
@@ -991,10 +1428,15 @@ function syncOperationIsCurrent(generation, signature) {
   return generation === syncGeneration && signature === currentSyncPathSignature();
 }
 
+// Eşitle ve Aynaya Bağla aynı diskleri, ilerleme kartını ve Durdur/Duraklat
+// kontrollerini paylaşır; biri çalışırken ötekinin başlatılması engellenir.
 function lockSyncPathControls() {
   syncPathLockCount++;
   document.querySelectorAll('button.pick, button.clear').forEach((button) => {
     button.disabled = true;
+  });
+  ['scanSync', 'applySync', 'scanRelink', 'applyRelink'].forEach((id) => {
+    $(id).disabled = true;
   });
 }
 
@@ -1004,6 +1446,10 @@ function unlockSyncPathControls() {
     document.querySelectorAll('button.pick, button.clear').forEach((button) => {
       button.disabled = false;
     });
+    $('scanSync').disabled = false;
+    if (syncPlans) updateApplySyncState(); else $('applySync').disabled = true;
+    refreshRelinkRoots();
+    updateApplyRelinkState();
   }
 }
 
@@ -1024,6 +1470,10 @@ function planSignature(plan) {
     overwrites: sorted(plan.overwrites, [
       'rel', 'size', 'srcMtimeMs', 'srcCtimeMs', 'srcFingerprint', 'srcFullFingerprint',
       'dstSize', 'dstMtimeMs', 'dstCtimeMs', 'dstFingerprint', 'dstFullFingerprint', 'destNewer',
+    ]),
+    renames: sorted(plan.renames || [], [
+      'rel', 'fromRel', 'size', 'srcMtimeMs', 'srcCtimeMs', 'srcFingerprint', 'srcFullFingerprint',
+      'dstMtimeMs', 'dstCtimeMs', 'dstFingerprint', 'dstFullFingerprint',
     ]),
     mirrorOnly: sorted(plan.mirrorOnly, [
       'rel', 'size', 'mtimeMs', 'ctimeMs', 'contentFingerprint', 'fullContentFingerprint',
@@ -1105,7 +1555,7 @@ async function verifyAllMirrors(plans, onProgress) {
   const sourceStable = rootSnapshotSignature(refreshed.sourceSnapshot) ===
                        rootSnapshotSignature(endSnapshot);
   const remaining = refreshed.plans.map((plan) =>
-    plan.copies.length + plan.overwrites.length
+    plan.copies.length + plan.overwrites.length + plan.renames.length
   );
   const mirrorOnlyStable = refreshed.plans.map((plan, index) =>
     mirrorOnlySignature(plan) === mirrorOnlySignature(plans[index])
@@ -1152,6 +1602,14 @@ function describePlan(plan, planIndex) {
   const bits = [];
   if (plan.copies.length) bits.push(`<span class="ok">${plan.copies.length} yeni</span>`);
   if (plan.overwrites.length) bits.push(`<span class="warn">${plan.overwrites.length} güncellenecek (yedekli)</span>`);
+  if (plan.renames && plan.renames.length) {
+    const what = {
+      mirror: "B'de yeniden adlandırılacak",
+      source: "A'da yeniden adlandırılacak",
+      skip: 'kopyalanacak, eskisi B\'de kalacak',
+    }[renameDecision];
+    bits.push(`<span class="warn">${plan.renames.length} yalnızca adı farklı${what ? ' → ' + what : ' — karar gerekli'}</span>`);
+  }
   if (!bits.length) bits.push(`<span class="ok">A → B eşleşiyor ✓</span>`);
   if (plan.mirrorOnly.length) {
     if (mirrorOnlyDecisionConfirmed) {
@@ -1418,16 +1876,79 @@ function applyMirrorOnlyFilter() {
   refreshMirrorOnlySelection();
 }
 
+function renamesPending() {
+  return Boolean(syncPlans && syncPlans.some((p) => p.renames && p.renames.length));
+}
+
 function updateApplySyncState() {
   const selectedCount = selectedMirrorOnly.size;
   const forwardWork = Boolean(syncPlans && syncPlans.some(hasForwardWork));
   const waitingForDecision = Boolean(
     syncPlans && syncPlans.some((p) => p.mirrorOnly.length) && !mirrorOnlyDecisionConfirmed
-  );
+  ) || (renamesPending() && !renameDecision);
   $('applySync').disabled = waitingForDecision || (!forwardWork && selectedCount === 0);
-  $('applySync').textContent = selectedCount
-    ? `${selectedCount} dosyayı A'ya al`
-    : 'Eşitle';
+  $('applySync').textContent = (renamesPending() && renameDecision === 'source')
+    ? "A'da yeniden adlandır"
+    : selectedCount ? `${selectedCount} dosyayı A'ya al` : 'Eşitle';
+}
+
+function renderRenameReview() {
+  const plansWithRenames = (syncPlans || []).filter((p) => p.renames && p.renames.length);
+  if (!plansWithRenames.length) {
+    $('renameReview').classList.add('hidden');
+    return;
+  }
+  const list = $('renameList');
+  list.innerHTML = '';
+  let files = 0, bytes = 0;
+  syncPlans.forEach((plan) => {
+    if (!plan.renames.length) return;
+    const name = path.basename(plan.dstRoot) || plan.dstRoot;
+    if (syncPlans.length > 1) {
+      const head = document.createElement('div');
+      head.className = 'rename-mirror-head';
+      head.textContent = name;
+      list.appendChild(head);
+    }
+    for (const r of plan.renames) {
+      files++; bytes += r.size;
+      const row = document.createElement('div');
+      row.className = 'rename-row';
+      row.title = `B: ${r.fromRel}\nA: ${r.rel}`;
+      const from = document.createElement('span');
+      from.className = 'from';
+      from.textContent = 'B: ' + r.fromRel;
+      const arrow = document.createElement('span');
+      arrow.className = 'arrow';
+      arrow.textContent = '⇄';
+      const to = document.createElement('span');
+      to.className = 'to';
+      to.textContent = 'A: ' + r.rel;
+      const size = document.createElement('span');
+      size.className = 'size';
+      size.textContent = fmtBytes(r.size);
+      row.append(from, arrow, to, size);
+      row.addEventListener('contextmenu', (ev) => openCtxMenu(ev, path.join(plan.dstRoot, r.fromRel), false));
+      list.appendChild(row);
+    }
+  });
+  $('renameStats').textContent = `${plansWithRenames.length} ayna · ${files} dosya · ${fmtBytes(bytes)} — kopyalamadan çözülebilir`;
+  document.querySelectorAll('input[name="renameMode"]').forEach((radio) => {
+    radio.checked = radio.value === renameDecision;
+  });
+  $('renameReview').classList.remove('hidden');
+}
+
+function setRenameDecision(value) {
+  renameDecision = value;
+  const label = {
+    mirror: "B'deki dosyalar A'daki ada taşınacak.",
+    source: "A'daki dosyalar B'deki ada taşınacak; sonra güncel plan gösterilecek.",
+    skip: "Ad farkına dokunulmayacak; A'daki adla kopyalanacak.",
+  }[value];
+  log('Ad farkı kararı: ' + label);
+  renderSyncPlanSummary();
+  updateApplySyncState();
 }
 
 function refreshMirrorOnlySelection() {
@@ -1487,6 +2008,7 @@ function confirmMirrorOnlyDecision(takeSelected) {
 function renderMirrorOnlyReview() {
   resetMirrorOnlyReview();
   const plansWithFiles = syncPlans.filter((p) => p.mirrorOnly.length);
+  renderRenameReview();
   if (!plansWithFiles.length) {
     updateApplySyncState();
     return;
@@ -1653,6 +2175,212 @@ async function importAndRefreshPlans(plans, prepared, progress, options) {
   return { imported, plans: refreshed.plans };
 }
 
+/* ── Aynaya Bağla akışı ──────────────────────────────────────── */
+
+let relinkPlan = null;
+
+const RELINK_ROOTS = [
+  { id: 'p0', label: 'Kaynak' },
+  { id: 'p1', label: 'Ayna 1' },
+  { id: 'p2', label: 'Ayna 2' },
+];
+
+function refreshRelinkRoots() {
+  const fromSel = $('relinkFrom');
+  const toSel = $('relinkTo');
+  if (!fromSel || !toSel || typeof fromSel.appendChild !== 'function') return;
+  const available = RELINK_ROOTS
+    .map((r) => ({ id: r.id, label: r.label, value: $(r.id).value.trim() }))
+    .filter((r) => r.value);
+  const fill = (sel, preferred) => {
+    const previous = sel.value;
+    sel.innerHTML = '';
+    for (const r of available) {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `${r.label} · ${path.basename(r.value) || r.value}`;
+      opt.title = r.value;
+      sel.appendChild(opt);
+    }
+    const ids = available.map((r) => r.id);
+    sel.value = ids.includes(previous) ? previous : (ids.includes(preferred) ? preferred : (ids[0] || ''));
+  };
+  fill(fromSel, 'p0');
+  fill(toSel, 'p1');
+  if (available.length >= 2 && fromSel.value === toSel.value) {
+    toSel.value = available.find((r) => r.id !== fromSel.value).id;
+  }
+  $('scanRelink').disabled = available.length < 2;
+}
+
+function relinkRootValue(selectId) {
+  const id = $(selectId).value;
+  return id ? $(id).value.trim() : '';
+}
+
+function invalidateRelink() {
+  relinkPlan = null;
+  $('applyRelink').disabled = true;
+  $('relinkSummary').textContent = '';
+  $('relinkList').innerHTML = '';
+  $('relinkOptions').classList.add('hidden');
+}
+
+function selectedRelinkEntries() {
+  if (!relinkPlan) return [];
+  const out = relinkPlan.direct.slice();
+  if ($('relinkRenamed').checked) out.push(...relinkPlan.renamed);
+  if ($('relinkUnverified').checked) out.push(...relinkPlan.unverified);
+  return out;
+}
+
+function updateApplyRelinkState() {
+  const n = selectedRelinkEntries().length;
+  $('applyRelink').disabled = n === 0;
+  $('applyRelink').textContent = n ? `${n} dosyayı bağla` : 'Bağla';
+}
+
+function renderRelinkPlan() {
+  const plan = relinkPlan;
+  const list = $('relinkList');
+  list.innerHTML = '';
+  if (!plan) return;
+  const toName = path.basename(plan.toRoot) || plan.toRoot;
+  const parts = [];
+  parts.push(`<span class="ok">${plan.direct.length} dosya ${escapeHtml(toName)} içinde aynı yolda, içerik doğrulandı</span>`);
+  if (plan.renamed.length) parts.push(`<span class="warn">${plan.renamed.length} dosya aynı içerik, farklı ad/yol</span>`);
+  if (plan.unverified.length) parts.push(`<span class="muted">${plan.unverified.length} dosya kaynakta çevrimdışı; hedefte yalnızca yol eşleşiyor</span>`);
+  if (plan.differs.length) parts.push(`<span class="err">${plan.differs.length} dosyanın hedefteki kopyası farklı içerikte (eşitle)</span>`);
+  if (plan.missing.length) parts.push(`<span class="err">${plan.missing.length} dosya hedefte yok (eşitle)</span>`);
+  if (plan.ambiguous.length) parts.push(`<span class="err">${plan.ambiguous.length} dosya için hedefte aynı içerikten birden çok aday var</span>`);
+  if (plan.elsewhere) parts.push(`<span class="muted">${plan.elsewhere} öğe başka bir yerde (dokunulmadı)</span>`);
+  parts.push(`<span class="muted">${plan.total} medya öğesi tarandı</span>`);
+  $('relinkSummary').innerHTML = parts.join('<br>');
+
+  const addRow = (cls, mainText, subText, sizeLabel, ctxPath) => {
+    const li = document.createElement('li');
+    if (cls) li.classList.add(cls);
+    const sp = document.createElement('span');
+    sp.className = 'fpath';
+    sp.textContent = mainText;
+    if (subText) {
+      const sub = document.createElement('span');
+      sub.className = 'sub';
+      sub.textContent = '  ' + subText;
+      sp.appendChild(document.createElement('br'));
+      sp.appendChild(sub);
+    }
+    const sz = document.createElement('span');
+    sz.className = 'fsize';
+    sz.textContent = sizeLabel;
+    li.append(sp, sz);
+    if (ctxPath) li.addEventListener('contextmenu', (ev) => openCtxMenu(ev, ctxPath, false));
+    list.appendChild(li);
+  };
+  for (const e of plan.renamed) addRow('renamed', e.rel, '→ ' + e.newRel, fmtBytes(e.size), e.oldPath);
+  for (const e of plan.unverified) addRow('unverified', e.rel, 'kaynak çevrimdışı · yol eşleşiyor', fmtBytes(e.size), e.newPath);
+  for (const e of plan.differs) addRow('offline', e.rel, 'hedefteki kopya farklı içerikte', 'farklı', e.oldPath);
+  for (const e of plan.missing) addRow('offline', e.rel, e.offline ? 'kaynakta da yok' : 'hedefte yok', e.size === null ? 'offline' : fmtBytes(e.size), e.oldPath);
+  for (const e of plan.ambiguous) addRow('offline', e.rel, 'adaylar: ' + e.candidates.join(' · '), 'belirsiz', e.oldPath);
+
+  $('relinkRenamedLabel').textContent = `Adı/yolu farklı ama içeriği aynı olanları da bağla (${plan.renamed.length})`;
+  $('relinkUnverifiedLabel').textContent = `Kaynağı çevrimdışı, yalnızca yolu eşleşenleri de bağla (${plan.unverified.length}) — doğrulanamadı`;
+  $('relinkRenamed').disabled = !plan.renamed.length;
+  $('relinkUnverified').disabled = !plan.unverified.length;
+  $('relinkOptions').classList.remove('hidden');
+  updateApplyRelinkState();
+}
+
+async function doScanRelink() {
+  const from = relinkRootValue('relinkFrom');
+  const to = relinkRootValue('relinkTo');
+  if (!from || !to) { log('Eşitle bölümünde en az iki disk seçili olmalı.', 'warn'); return; }
+  if (pathsOverlap(from, to)) { log('Şimdiki disk ile hedef disk aynı veya iç içe olamaz.', 'err'); return; }
+  if (!fs.existsSync(from)) { log('Şimdiki disk bulunamadı (takılı mı?): ' + from, 'err'); return; }
+  if (!fs.existsSync(to)) { log('Hedef disk bulunamadı (takılı mı?): ' + to, 'err'); return; }
+
+  invalidateRelink();
+  $('scanRelink').disabled = true;
+  lockSyncPathControls();
+  showProgress('Proje medyası hedef diskte aranıyor…');
+  armStop();
+  try {
+    const res = await callJSX('getMediaPaths');
+    if (!res.ok) { log('Proje taranamadı: ' + res.err, 'err'); return; }
+    const plan = await buildRelinkPlan(res.items, from, to, (p) => {
+      setProgress(p.doneFiles / (p.totalFiles || 1),
+        `${p.doneFiles}/${p.totalFiles}` + (p.rel ? ' · ' + p.rel : ''));
+    });
+    disarmStop();
+    relinkPlan = plan;
+    renderRelinkPlan();
+    const linkable = plan.direct.length + plan.renamed.length;
+    log(`Bağlama taraması bitti: ${linkable} dosya hedefte doğrulandı` +
+        (plan.renamed.length ? ` (${plan.renamed.length} farklı adla)` : '') +
+        (plan.missing.length + plan.differs.length ? `, ${plan.missing.length + plan.differs.length} dosya için önce eşitleme gerek` : '') + '.',
+        linkable ? undefined : 'warn');
+  } catch (e) {
+    if (e.stopped) log('Bağlama taraması durduruldu.', 'warn');
+    else log('Bağlama taraması hatası: ' + e.message, 'err');
+  } finally {
+    disarmStop();
+    hideProgress();
+    unlockSyncPathControls();
+    refreshRelinkRoots();
+  }
+}
+
+async function doApplyRelink() {
+  const entries = selectedRelinkEntries();
+  if (!entries.length) return;
+  const plan = relinkPlan;
+  $('applyRelink').disabled = true;
+  $('scanRelink').disabled = true;
+  lockSyncPathControls();
+  showProgress('Proje yeniden bağlanıyor…');
+  let linkedItems = 0, skipped = 0;
+  const errors = [];
+  try {
+    const BATCH = 150;
+    for (let i = 0; i < entries.length; i += BATCH) {
+      const batch = entries.slice(i, i + BATCH);
+      // Yeni yol hâlâ yerinde mi? (tarama ile bağlama arasında disk çekilmiş olabilir)
+      const pairs = [];
+      for (const e of batch) {
+        if (fs.existsSync(e.newPath)) pairs.push([e.oldPath, e.newPath]);
+        else errors.push(`${e.rel}: hedef dosya artık yok (${e.newPath})`);
+      }
+      if (pairs.length) {
+        const rl = await callJSX('relinkMany', pairs);
+        if (!rl.ok) { errors.push('Premiere bağlama hatası: ' + rl.err); break; }
+        linkedItems += rl.count;
+        skipped += rl.skipped;
+      }
+      setProgress(Math.min(1, (i + batch.length) / entries.length),
+        `${Math.min(i + batch.length, entries.length)}/${entries.length} dosya`);
+      await tick();
+    }
+    const toName = path.basename(plan.toRoot) || plan.toRoot;
+    const msg = `Bitti: ${linkedItems} proje öğesi ${toName} içine bağlandı` +
+                (skipped ? `, ${skipped} öğe değiştirilemedi` : '') +
+                (errors.length ? `, ${errors.length} hata` : '') + '.';
+    log(msg, errors.length || skipped ? 'warn' : 'ok');
+    for (const e of errors) log(e, 'err');
+    const leftover = plan.missing.length + plan.differs.length + plan.ambiguous.length;
+    $('relinkSummary').innerHTML = `<span class="${errors.length ? 'warn' : 'ok'}">${escapeHtml(msg)}</span>` +
+      (leftover ? `<br><span class="muted">${leftover} dosya bağlanmadı (hedefte yok/farklı/belirsiz); Eşitle ile tamamlayıp yeniden tara.</span>` : '');
+  } finally {
+    hideProgress();
+    unlockSyncPathControls();
+    relinkPlan = null;
+    $('relinkList').innerHTML = '';
+    $('relinkOptions').classList.add('hidden');
+    $('applyRelink').disabled = true;
+    $('applyRelink').textContent = 'Bağla';
+    refreshRelinkRoots();
+  }
+}
+
 async function doScanSync() {
   const { src, mirrors } = getSyncPaths();
   if (!src || !mirrors.length) { log('Kaynak ve en az bir ayna seç.', 'warn'); return; }
@@ -1670,9 +2398,11 @@ async function doScanSync() {
   $('scanSync').disabled = true;
   lockSyncPathControls();
   showProgress('Tam içerik taranıyor…');
+  armStop();
   try {
     const seeds = mirrors.map((dstRoot) => ({ srcRoot: src, dstRoot }));
     const scanResult = await refreshSyncPlans(seeds, 'Tarama', { deep: true });
+    disarmStop();
     if (!syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
       log('Disk seçimi tarama sırasında değişti. Eski tarama sonucu kullanılmadı.', 'warn');
       invalidateSync();
@@ -1694,11 +2424,15 @@ async function doScanSync() {
       log('Tarama bitti.' + (anyWork ? '' : ' A → B zaten tamam.'), anyWork ? undefined : 'ok');
     }
   } catch (e) {
-    if (syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
+    if (e.stopped) {
+      log('Tarama durduruldu. Hiçbir dosyaya dokunulmadı.', 'warn');
+      invalidateSync();
+    } else if (syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
       log('Tarama hatası: ' + e.message, 'err');
       invalidateSync();
     }
   } finally {
+    disarmStop();
     hideProgress();
     $('scanSync').disabled = false;
     unlockSyncPathControls();
@@ -1725,7 +2459,9 @@ async function doApplySync() {
   let completed = false;
   try {
     showProgress('Tam içerik kontrolü yapılıyor…');
+    armStop(); // yalnızca okuma yapan ön kontrol; yazma başlamadan kapatılır
     const latestResult = await refreshSyncPlans(syncPlans, 'Kontrol', { deep: true });
+    disarmStop();
     if (!syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
       log('Disk seçimi kontrol sırasında değişti. Eski plan uygulanmadı.', 'warn');
       invalidateSync();
@@ -1743,6 +2479,38 @@ async function doApplySync() {
       return;
     }
     syncPlans = latestPlans;
+
+    if (renamesPending() && renameDecision === 'source') {
+      // A değişecek; yazma işi budur, sonra plan yenilenir ve tekrar onay istenir.
+      const preparedRenames = prepareSourceRenames(syncPlans);
+      for (const error of preparedRenames.errors) log(error, 'err');
+      showProgress("A'da yeniden adlandırılıyor…");
+      const renameReport = await applySourceRenames(preparedRenames, (p) => {
+        setProgress(p.doneFiles / (p.totalFiles || 1), `${p.doneFiles}/${p.totalFiles} · ${p.label}`);
+      });
+      for (const error of renameReport.errors) log(error, 'err');
+      log(`A'da ${renameReport.renamed} dosya yeniden adlandırıldı.` +
+          (renameReport.errors.length ? ` ${renameReport.errors.length} dosyaya dokunulmadı.` : ''),
+          renameReport.errors.length ? 'warn' : 'ok');
+      showProgress('Güncel A → B planı hazırlanıyor…');
+      const refreshed = await refreshSyncPlans(syncPlans, 'A güncellendi', { deep: true });
+      if (!syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
+        log('Disk seçimi işlem sırasında değişti. Yeniden Tara.', 'err');
+        invalidateSync();
+        return;
+      }
+      syncPlans = refreshed.plans;
+      renderMirrorOnlyReview();
+      renderSyncPlanSummary();
+      const stillWork = syncPlans.some(hasForwardWork) || syncPlans.some((p) => p.mirrorOnly.length);
+      if (stillWork) {
+        log('A güncellendi. Güncel A → B planını gösterdim; kararları yeniden ver ve onayla.', 'warn');
+      } else {
+        log('A güncellendi. A ve aynalar tam içerikle eşleşiyor.', 'ok');
+        completed = true;
+      }
+      return;
+    }
 
     const selectedKeys = new Set(selectedMirrorOnly);
     if (selectedKeys.size) {
@@ -1810,8 +2578,10 @@ async function doApplySync() {
       return;
     }
 
+    // "Dokunma" kararı: ad farkları eski davranışa açılır (kopyala + B'de bırak).
+    const effectivePlans = renameDecision === 'skip' ? syncPlans.map(expandRenames) : syncPlans;
     let shownPhase = '';
-    const applied = await applyAllMirrors(syncPlans, (event) => {
+    const applied = await applyAllMirrors(effectivePlans, (event) => {
       if (event.phase === 'apply') {
         const plan = event.plan;
         const name = path.basename(plan.dstRoot) || plan.dstRoot;
@@ -1852,7 +2622,8 @@ async function doApplySync() {
       const name = path.basename(plan.dstRoot) || plan.dstRoot;
       const ok = report.errors.length === 0 && applied.sourceStable &&
                  applied.mirrorOnlyStable[i] && remaining === 0;
-      const msg = `${report.copied} kopyalandı, ${report.overwritten} güncellendi · ` +
+      const msg = `${report.copied} kopyalandı, ${report.overwritten} güncellendi` +
+                  (report.renamed ? `, ${report.renamed} yeniden adlandırıldı` : '') + ' · ' +
                   (remaining ? `${remaining} A → B farkı kaldı` : 'A → B tam içerik kontrolü geçti') +
                   (!applied.mirrorOnlyStable[i] ? ' · B’ye özgü dosya kararı değişti' :
                    (verification.mirrorOnly.length ? ` · ${verification.mirrorOnly.length} B'de bırakıldı` : '')) +
@@ -1886,7 +2657,9 @@ async function doApplySync() {
       }
     }
   } catch (e) {
-    if (!syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
+    if (e.stopped) {
+      log('Kontrol durduruldu. Hiçbir dosyaya dokunulmadı; plan duruyor.', 'warn');
+    } else if (!syncOperationIsCurrent(operationGeneration, operationPathSignature)) {
       log('Disk seçimi işlem sırasında değişti. Devam etmeden önce yeniden Tara.', 'err');
       invalidateSync();
     } else {
@@ -1895,6 +2668,7 @@ async function doApplySync() {
       invalidateSync();
     }
   } finally {
+    disarmStop();
     hideProgress();
     $('scanSync').disabled = false;
     unlockSyncPathControls();
@@ -2002,6 +2776,18 @@ function init() {
   $('applyCollect').onclick = doApplyCollect;
   $('scanSync').onclick = doScanSync;
   $('applySync').onclick = doApplySync;
+  $('stopOp').onclick = requestStop;
+  $('pauseOp').onclick = togglePause;
+  document.querySelectorAll('input[name="renameMode"]').forEach((radio) => {
+    radio.addEventListener('change', () => { if (radio.checked) setRenameDecision(radio.value); });
+  });
+  $('scanRelink').onclick = doScanRelink;
+  $('applyRelink').onclick = doApplyRelink;
+  $('relinkRenamed').addEventListener('change', updateApplyRelinkState);
+  $('relinkUnverified').addEventListener('change', updateApplyRelinkState);
+  $('relinkFrom').addEventListener('change', invalidateRelink);
+  $('relinkTo').addEventListener('change', invalidateRelink);
+  refreshRelinkRoots();
   $('mirrorOnlySearch').addEventListener('input', applyMirrorOnlyFilter);
   $('selectAllMirrorOnly').addEventListener('change', (ev) => {
     setSelection(getSelectableMirrorOnlyKeys(getAllMirrorOnlyKeys()), ev.target.checked);

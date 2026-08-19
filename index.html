@@ -218,11 +218,59 @@ c-12 -48 -29 -52 -54 -11 -25 39 -20 81 13 116 l22 24 14 -46 c10 -33 12 -56
       <button id="changeMirrorOnlyDecision" class="ghost compact">Değiştir</button>
     </div>
   </div>
+
+  <div id="renameReview" class="mirror-review hidden">
+    <div class="review-head">
+      <div>
+        <div class="review-title">Aynı içerik, farklı ad</div>
+        <div id="renameStats" class="review-stats" role="status"></div>
+      </div>
+    </div>
+    <p class="review-question">Bu dosyalar içerik olarak birebir aynı; yalnızca adı veya yolu farklı. Ne yapayım?</p>
+    <div id="renameList" class="rename-list"></div>
+    <div class="rename-choices" role="radiogroup" aria-label="Ad farkı kararı">
+      <label><input type="radio" name="renameMode" value="mirror"> <b>B'de yeniden adlandır</b> — A'daki adları kullan. Kopya yok, saniyeler sürer.</label>
+      <label><input type="radio" name="renameMode" value="source"> <b>A'da yeniden adlandır</b> — B'deki adları kullan. Sonra güncel plan yeniden gösterilir.</label>
+      <label><input type="radio" name="renameMode" value="skip"> <b>Dokunma</b> — A'daki adla B'ye kopyala; B'deki eskisi yerinde kalsın.</label>
+    </div>
+    <p class="review-note">Yeniden adlandırma içeriğe dokunmaz. O diske bağlı açık projede bu klipler çevrimdışı görünür; aşağıdaki <b>Aynaya Bağla</b> ile yeniden bağlanır.</p>
+  </div>
+</section>
+
+<!-- ── Aynaya Bağla ──────────────────────────────── -->
+<section class="card">
+  <h2>Aynaya Bağla</h2>
+  <p class="hint">Proje bir diske bağlıyken medyayı öteki diskteki birebir kopyasına bağlar
+     (projeyi taşıdıysan). Her dosya içerikten doğrulanır; adı değişmiş kopyayı da bulur.</p>
+
+  <div class="row relink-dir">
+    <span class="tag">Şimdi</span>
+    <select id="relinkFrom" aria-label="Projenin şu an bağlı olduğu disk"></select>
+    <span class="relink-arrow" aria-hidden="true">→</span>
+    <span class="tag src">Hedef</span>
+    <select id="relinkTo" aria-label="Bağlanacak disk"></select>
+  </div>
+
+  <div class="btnrow">
+    <button id="scanRelink" class="primary">Tara</button>
+    <button id="applyRelink" class="primary" disabled>Bağla</button>
+  </div>
+
+  <div id="relinkSummary" class="summary"></div>
+  <div id="relinkOptions" class="relink-options hidden">
+    <label class="check-action"><input id="relinkRenamed" type="checkbox" checked> <span id="relinkRenamedLabel"></span></label>
+    <label class="check-action"><input id="relinkUnverified" type="checkbox"> <span id="relinkUnverifiedLabel"></span></label>
+  </div>
+  <ul id="relinkList" class="filelist"></ul>
 </section>
 
 <!-- ── İlerleme ──────────────────────────────────── -->
 <section class="card progresscard hidden" id="progressCard">
-  <div id="progressLabel" class="plabel"></div>
+  <div class="prow">
+    <div id="progressLabel" class="plabel"></div>
+    <button id="pauseOp" class="compact hidden" title="Taramayı duraklat; Devam ile kaldığı yerden sürer">Duraklat</button>
+    <button id="stopOp" class="stop compact hidden" title="Taramayı durdur (hiçbir dosyaya dokunulmaz)">Durdur</button>
+  </div>
   <div class="bar"><div id="barFill"></div></div>
   <div id="progressDetail" class="pdetail"></div>
 </section>

@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
 
 function loadEngine(options) {
   options = options || {};
@@ -13,7 +14,9 @@ function loadEngine(options) {
     '\n;globalThis.__kementTest = {' +
     'fullFingerprint, planMirror, applyMirror, applyAllMirrors, verifyAllMirrors, ' +
     'buildMirrorOnlyTree, prepareMirrorOnlyImports, importMirrorOnlyFiles, ' +
-    'importAndRefreshPlans, BACKUP_DIR' +
+    'importAndRefreshPlans, BACKUP_DIR, ' +
+    'fingerprint, fingerprintAsync, armStop, disarmStop, requestStop, togglePause, ' +
+    'expandRenames, prepareSourceRenames, applySourceRenames, buildRelinkPlan' +
     '};';
   const element = () => ({
     prepend: () => {},
@@ -110,6 +113,9 @@ async function run() {
       assert.ok(!fs.existsSync(path.join(b, engine.BACKUP_DIR)));
     }
 
+    // Aynı içerik, farklı yol = ad değişikliği/taşıma. Varsayılan plan bunu
+    // "renames" olarak ayırır; "Dokunma" kararı (expandRenames) eski davranışa
+    // döner: A'daki adla kopyala, B'dekini yerinde bırak.
     {
       const a = path.join(tempRoot, 'same-content-path-a');
       const b = path.join(tempRoot, 'same-content-path-b');
@@ -117,13 +123,108 @@ async function run() {
       write(b, 'personal/logo-copy.png', 'same-image');
 
       const plan = await deepPlan(a, b);
-      assert.strictEqual(plan.copies.length, 1);
-      assert.strictEqual(plan.mirrorOnly.length, 1);
-      await engine.applyMirror(plan, progress);
+      assert.strictEqual(plan.renames.length, 1);
+      assert.strictEqual(plan.renames[0].rel, 'project/logo.png');
+      assert.strictEqual(plan.renames[0].fromRel, 'personal/logo-copy.png');
+      assert.strictEqual(plan.copies.length, 0);
+      assert.strictEqual(plan.mirrorOnly.length, 0);
+      assert.strictEqual(plan.bytes, 0);
 
+      const expanded = engine.expandRenames(plan);
+      assert.strictEqual(expanded.copies.length, 1);
+      assert.strictEqual(expanded.mirrorOnly.length, 1);
+      assert.strictEqual(expanded.renames.length, 0);
+      assert.strictEqual(expanded.bytes, 'same-image'.length);
+      const report = await engine.applyMirror(expanded, progress);
+      assert.strictEqual(report.errors.length, 0);
       assert.ok(fs.existsSync(path.join(b, 'project/logo.png')));
       assert.ok(fs.existsSync(path.join(b, 'personal/logo-copy.png')));
       assert.ok(!fs.existsSync(path.join(b, engine.BACKUP_DIR)));
+    }
+
+    // Karar "B'de yeniden adlandır": kopya yok, B'deki dosya A'daki yola taşınır;
+    // kamera klasöründe ACam_ öneki senaryosu. Sonraki tarama A → B tam der.
+    {
+      const a = path.join(tempRoot, 'rename-mirror-a');
+      const b = path.join(tempRoot, 'rename-mirror-b');
+      write(a, 'Footage/ACam/ACam_aa342.mov', 'clip-aa342');
+      write(a, 'Footage/BCam/BCam_a134.mov', 'clip-a134');
+      write(b, 'Footage/ACam/aa342.mov', 'clip-aa342');
+      write(b, 'Footage/BCam/a134.mov', 'clip-a134');
+      const bIno = fs.statSync(path.join(b, 'Footage/ACam/aa342.mov')).ino;
+
+      const plan = await deepPlan(a, b);
+      assert.strictEqual(plan.renames.length, 2);
+      assert.strictEqual(plan.copies.length, 0);
+      assert.strictEqual(plan.mirrorOnly.length, 0);
+      const report = await engine.applyMirror(plan, progress);
+      assert.strictEqual(report.errors.length, 0);
+      assert.strictEqual(report.renamed, 2);
+      assert.strictEqual(report.copied, 0);
+      assert.ok(!fs.existsSync(path.join(b, 'Footage/ACam/aa342.mov')));
+      assert.strictEqual(fs.readFileSync(path.join(b, 'Footage/ACam/ACam_aa342.mov'), 'utf8'), 'clip-aa342');
+      assert.strictEqual(fs.statSync(path.join(b, 'Footage/ACam/ACam_aa342.mov')).ino, bIno); // kopya değil, aynı dosya
+      const after = await deepPlan(a, b);
+      assert.strictEqual(after.renames.length + after.copies.length + after.mirrorOnly.length, 0);
+      assert.strictEqual(after.sameCount, 2);
+    }
+
+    // Karar "A'da yeniden adlandır": B'nin adları A'ya uygulanır; iki ayna
+    // çelişirse o dosyaya dokunulmaz.
+    {
+      const a = path.join(tempRoot, 'rename-source-a');
+      const b1 = path.join(tempRoot, 'rename-source-b1');
+      const b2 = path.join(tempRoot, 'rename-source-b2');
+      write(a, 'Cam/aa342.mov', 'clip-1');
+      write(a, 'Cam/x.mov', 'clip-x');
+      write(b1, 'Cam/ACam_aa342.mov', 'clip-1');
+      write(b1, 'Cam/x1.mov', 'clip-x');
+      write(b2, 'Cam/ACam_aa342.mov', 'clip-1');
+      write(b2, 'Cam/x2.mov', 'clip-x');
+      const plans = [await deepPlan(a, b1), await deepPlan(a, b2)];
+      assert.strictEqual(plans[0].renames.length, 2);
+      const prepared = engine.prepareSourceRenames(plans);
+      assert.strictEqual(prepared.files.length, 1);
+      assert.strictEqual(prepared.errors.length, 1);
+      assert.ok(prepared.errors[0].includes('farklı ad'));
+      const report = await engine.applySourceRenames(prepared, progress);
+      assert.strictEqual(report.errors.length, 0);
+      assert.strictEqual(report.renamed, 1);
+      assert.ok(fs.existsSync(path.join(a, 'Cam/ACam_aa342.mov')));
+      assert.ok(!fs.existsSync(path.join(a, 'Cam/aa342.mov')));
+      assert.ok(fs.existsSync(path.join(a, 'Cam/x.mov')));
+      const after = await deepPlan(a, b1);
+      assert.strictEqual(after.sameCount, 1);
+      assert.strictEqual(after.renames.length, 1); // x.mov ↔ x1.mov hâlâ kararsız
+    }
+
+    // Belirsizlik: aynı içerikten iki kopya varsa hangi ad hangisine gitti
+    // bilinemez → ad değişikliği sayılmaz, eski davranış korunur. Ayrıca
+    // hedef ad B'de doluysa yeniden adlandırma yapılmaz.
+    {
+      const a = path.join(tempRoot, 'rename-ambiguous-a');
+      const b = path.join(tempRoot, 'rename-ambiguous-b');
+      write(a, 'dup1.mov', 'same-clip');
+      write(a, 'dup2.mov', 'same-clip');
+      write(b, 'old1.mov', 'same-clip');
+      write(b, 'old2.mov', 'same-clip');
+      const plan = await deepPlan(a, b);
+      assert.strictEqual(plan.renames.length, 0);
+      assert.strictEqual(plan.copies.length, 2);
+      assert.strictEqual(plan.mirrorOnly.length, 2);
+
+      const c = path.join(tempRoot, 'rename-busy-a');
+      const d = path.join(tempRoot, 'rename-busy-b');
+      write(c, 'new.mov', 'clip');
+      write(d, 'old.mov', 'clip');
+      const busyPlan = await deepPlan(c, d);
+      assert.strictEqual(busyPlan.renames.length, 1);
+      write(d, 'new.mov', 'something-else'); // taramadan sonra hedef ad doldu
+      const report = await engine.applyMirror(busyPlan, progress);
+      assert.strictEqual(report.renamed, 0);
+      assert.ok(report.errors.some((e) => e.includes('zaten var')));
+      assert.strictEqual(fs.readFileSync(path.join(d, 'new.mov'), 'utf8'), 'something-else');
+      assert.strictEqual(fs.readFileSync(path.join(d, 'old.mov'), 'utf8'), 'clip');
     }
 
     {
@@ -424,7 +525,136 @@ async function run() {
       assert.ok(!fs.existsSync(path.join(outside, 'master.txt')));
     }
 
-    console.log('sync-engine: 20 senaryo geçti');
+    // 21) Hızlı parmak izi: eşzamanlı ve asenkron sürüm birebir aynı değeri
+    // üretir (küçük dosya, tek bölge; büyük dosya, beş bölge).
+    {
+      const a = path.join(tempRoot, 'fp');
+      const small = write(a, 'small.bin', Buffer.from('küçük içerik'));
+      const big = write(a, 'big.bin', crypto.randomBytes(3 * 1024 * 1024));
+      for (const file of [small, big]) {
+        const size = fs.statSync(file).size;
+        assert.strictEqual(await engine.fingerprintAsync(file, size),
+                           engine.fingerprint(file, size));
+      }
+      const bigHash = engine.fingerprint(big, fs.statSync(big).size);
+      const fd = fs.openSync(big, 'r+');
+      fs.writeSync(fd, Buffer.from('X'), 0, 1, Math.floor(3 * 1024 * 1024 * 0.5));
+      fs.closeSync(fd);
+      assert.notStrictEqual(engine.fingerprint(big, fs.statSync(big).size), bigHash);
+    }
+
+    // 22) Durdur: silahlıyken tam içerik taraması StopError ile kesilir ve
+    // hiçbir şey yazılmaz; silahsızken aynı istek etkisizdir.
+    {
+      const a = path.join(tempRoot, 'stop-a');
+      const b = path.join(tempRoot, 'stop-b');
+      write(a, 'one.bin', crypto.randomBytes(9 * 1024 * 1024));
+      write(a, 'two.bin', crypto.randomBytes(9 * 1024 * 1024));
+      fs.mkdirSync(b, { recursive: true });
+
+      engine.armStop();
+      const stoppedPlan = engine.planMirror(a, b, {
+        deep: true,
+        onProgress: () => engine.requestStop(),
+      });
+      await assert.rejects(stoppedPlan, (error) => error.stopped === true);
+      engine.disarmStop();
+      assert.strictEqual(fs.readdirSync(b).length, 0);
+
+      engine.requestStop(); // silahsız: yok sayılır
+      const plan = await deepPlan(a, b);
+      assert.strictEqual(plan.copies.length, 2);
+
+      const file = path.join(a, 'one.bin');
+      engine.armStop();
+      engine.requestStop();
+      await assert.rejects(() => engine.fullFingerprint(file, fs.statSync(file).size),
+                           (error) => error.stopped === true);
+      engine.disarmStop();
+      const hash = await engine.fullFingerprint(file, fs.statSync(file).size);
+      assert.ok(/^\d+:[0-9a-f]{64}$/.test(hash));
+    }
+
+    // 23) Duraklat: silahlıyken tarama ilk kontrol noktasında bekler, Devam
+    // ile kaldığı yerden bitirir; duraklatılmışken Durdur anında keser.
+    {
+      const a = path.join(tempRoot, 'pause-a');
+      const b = path.join(tempRoot, 'pause-b');
+      write(a, 'one.bin', crypto.randomBytes(9 * 1024 * 1024));
+      fs.mkdirSync(b, { recursive: true });
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      engine.armStop();
+      let progressCalls = 0;
+      let settled = false;
+      const planPromise = engine.planMirror(a, b, {
+        deep: true,
+        onProgress: () => { if (++progressCalls === 1) engine.togglePause(); },
+      }).finally(() => { settled = true; });
+      await sleep(150);
+      assert.strictEqual(settled, false);
+      const callsWhilePaused = progressCalls;
+      await sleep(100);
+      assert.strictEqual(progressCalls, callsWhilePaused); // duraklamada ilerleme yok
+      engine.togglePause(); // Devam
+      const plan = await planPromise;
+      assert.strictEqual(plan.copies.length, 1);
+      engine.disarmStop();
+
+      engine.armStop();
+      let stoppedSettled = false;
+      const stoppedPromise = engine.planMirror(a, b, {
+        deep: true,
+        onProgress: () => engine.togglePause(),
+      }).catch((error) => error).finally(() => { stoppedSettled = true; });
+      await sleep(100);
+      assert.strictEqual(stoppedSettled, false);
+      engine.requestStop();
+      const error = await stoppedPromise;
+      assert.strictEqual(error.stopped, true);
+      engine.disarmStop();
+      assert.strictEqual(fs.readdirSync(b).length, 0);
+    }
+
+    // Aynaya bağla: proje öğeleri A'ya bağlı; B'de aynı yol + içerik → doğrudan,
+    // farklı ad aynı içerik → renamed, B'de yok → missing, aynı yolda farklı
+    // içerik → differs, A çevrimdışı + B'de yol var → unverified.
+    {
+      const a = path.join(tempRoot, 'relink-a');
+      const b = path.join(tempRoot, 'relink-b');
+      write(a, 'Footage/ACam/ACam_aa342.mov', crypto.randomBytes(2 * 1024 * 1024));
+      write(b, 'Footage/ACam/ACam_aa342.mov', fs.readFileSync(path.join(a, 'Footage/ACam/ACam_aa342.mov')));
+      write(a, 'Footage/BCam/BCam_a134.mov', 'clip-a134');
+      write(b, 'Footage/BCam/a134.mov', 'clip-a134');
+      write(a, 'Footage/only-a.mov', 'only-a');
+      write(a, 'Audio/v1.wav', 'version-1');
+      write(b, 'Audio/v1.wav', 'version-2');
+      write(b, 'Audio/gone.wav', 'gone');
+      const items = [
+        { name: 'ACam_aa342', path: path.join(a, 'Footage/ACam/ACam_aa342.mov') },
+        { name: 'ACam_aa342 (dup)', path: path.join(a, 'Footage/ACam/ACam_aa342.mov') },
+        { name: 'BCam_a134', path: path.join(a, 'Footage/BCam/BCam_a134.mov') },
+        { name: 'only-a', path: path.join(a, 'Footage/only-a.mov') },
+        { name: 'v1', path: path.join(a, 'Audio/v1.wav') },
+        { name: 'gone', path: path.join(a, 'Audio/gone.wav') },
+        { name: 'elsewhere', path: path.join(tempRoot, 'elsewhere.mov') },
+      ];
+      const plan = await engine.buildRelinkPlan(items, a, b, () => {});
+      assert.strictEqual(plan.total, 6);
+      assert.strictEqual(plan.elsewhere, 1);
+      assert.strictEqual(plan.direct.length, 1);
+      assert.strictEqual(plan.direct[0].newPath, path.join(b, 'Footage/ACam/ACam_aa342.mov'));
+      assert.strictEqual(plan.renamed.length, 1);
+      assert.strictEqual(plan.renamed[0].newPath, path.join(b, 'Footage/BCam/a134.mov'));
+      assert.strictEqual(plan.missing.length, 1);
+      assert.strictEqual(plan.missing[0].rel, 'Footage/only-a.mov');
+      assert.strictEqual(plan.differs.length, 1);
+      assert.strictEqual(plan.differs[0].rel, 'Audio/v1.wav');
+      assert.strictEqual(plan.unverified.length, 1);
+      assert.strictEqual(plan.unverified[0].newPath, path.join(b, 'Audio/gone.wav'));
+    }
+
+    console.log('sync-engine: 28 senaryo geçti');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

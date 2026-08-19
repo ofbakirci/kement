@@ -33,6 +33,25 @@ Kurallar:
   Değişiklik tarihleri korunur.
 - Aynadaki bir dosya kaynaktakinden daha yeniyse tarama sırasında uyarır
   (yanlış yönde eşitlemeye karşı sigorta).
+- **Ad değişikliği kopya değildir.** İçeriği birebir aynı olup yalnızca adı
+  veya yolu farklı olan çiftleri (örn. `aa342.mov` → `ACam_aa342.mov`) ayrı
+  listeler ve sorar: *B'de yeniden adlandır* (A'nın adları, kopya yok),
+  *A'da yeniden adlandır* (B'nin adları) ya da *dokunma* (kopyala, eskisi B'de
+  kalsın). Aynı içerikten birden fazla kopya varsa eşleşme belirsiz sayılır ve
+  eski davranış korunur.
+- Tarama ve doğrulama aşamaları **Duraklat / Durdur** ile kesilebilir; bu
+  aşamalar yalnızca okur, yarıda kesmenin zararı yoktur. Yazma aşamalarında
+  butonlar gizlenir.
+
+### Aynaya Bağla
+Projeyi A diskinden B diskine taşıdın, B'de açtın ama medya hâlâ A'ya bakıyor.
+İki disk de takılıyken **Tara**: her proje öğesi için B'deki karşılık aranır.
+Aynı yol + aynı içerik doğrudan bağlanır; adı/yolu değişmiş kopya içerikten
+bulunur ve ayrı grupta gösterilir (isteğe bağlı bağlanır). B'de olmayan ya da
+farklı içerikte olanlar listelenir — önce Eşitle, sonra yeniden tara.
+Doğrulama hızlı parmak iziyle (boyut + beş bölge SHA-256) yapılır; proje
+bağlantısı geri alınabilir olduğundan tam içerik okunmaz. Yön seçilebilir
+(Kaynak → Ayna veya tersi).
 
 ## Kurulum
 
@@ -60,7 +79,7 @@ tercihini açar (CEP 9–12). Kod güncellenince Premiere'i yeniden başlatmak y
 - `CSXS/manifest.xml` — CEP manifest (Premiere 13.0+, Node.js açık)
 - `index.html` + `css/style.css` — panel arayüzü
 - `js/main.js` — eşitleme motoru, içerik doğrulama, toplama akışı, UI
-- `jsx/kement.jsx` — ExtendScript: proje medya yollarını okuma + relink
+- `jsx/kement.jsx` — ExtendScript: proje medya yollarını okuma + relink (tekil ve toplu)
 - `tests/sync-engine.test.js` — dosya sistemi eşitleme güvenlik senaryoları
 - `assets/kement.svg` — logo: [koboyo](https://koboyo.com/icons/cartoon-lasso)
   el çizimi "cartoon-lasso" ikonu (ticari kullanım dahil ücretsiz lisans)

@@ -35,6 +35,10 @@ var ESL = (function () {
 
   return {
 
+    // Panel bu değeri kontrol eder; eşleşmezse dosyayı yeniden yükler
+    // (Premiere açıkken panel güncellenince eski ESL bellekte kalıyor).
+    version: "0.3.0",
+
     ping: function () {
       return '{"ok":true}';
     },
@@ -85,6 +89,41 @@ var ESL = (function () {
             } else {
               skipped++;
             }
+          }
+        }
+        return '{"ok":true,"count":' + n + ',"skipped":' + skipped + '}';
+      } catch (e) {
+        return '{"ok":false,"err":' + esc(e.toString()) + '}';
+      }
+    },
+
+    // pairs: [[oldPath, newPath], ...] — projeyi bir kez dolaşır, her öğeyi
+    // eşleşen yeni yola bağlar.
+    relinkMany: function (pairs) {
+      try {
+        if (!app.project) return '{"ok":false,"err":"Açık proje yok"}';
+        var map = {};
+        for (var k = 0; k < pairs.length; k++) map[pairs[k][0]] = pairs[k][1];
+        var items = [];
+        collectItems(app.project.rootItem, items);
+        var n = 0, skipped = 0;
+        for (var i = 0; i < items.length; i++) {
+          var p = "";
+          try { p = items[i].getMediaPath(); } catch (e) {}
+          if (!p || !map.hasOwnProperty(p)) continue;
+          var can = true;
+          try {
+            if (items[i].canChangeMediaPath) can = items[i].canChangeMediaPath();
+          } catch (e) {}
+          if (can) {
+            try {
+              items[i].changeMediaPath(map[p], true);
+              n++;
+            } catch (e) {
+              skipped++;
+            }
+          } else {
+            skipped++;
           }
         }
         return '{"ok":true,"count":' + n + ',"skipped":' + skipped + '}';
