@@ -1,2 +1,5 @@
 .DS_Store
 dist/
+
+# Yerel ajan ayarlari (API anahtari icerir)
+.codex/
